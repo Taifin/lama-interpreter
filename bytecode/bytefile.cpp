@@ -2,6 +2,8 @@
 #include "../runtime/runtime_common.h"
 #include "../runtime/runtime.h"
 
+size_t bf_size;
+
 /* Gets a string from a string table by an index */
 char *get_string(bytefile *f, int pos) {
     return &f->string_ptr[pos];
@@ -49,6 +51,7 @@ bytefile *readFile(const std::string &filename) {
     bf->public_ptr = (int *) bf->buffer;
     bf->code_ptr = &bf->string_ptr[bf->stringtab_size];
     bf->global_ptr = (int *) malloc(bf->global_area_size * sizeof(int));
+    bf_size = size;
 
     return bf;
 }

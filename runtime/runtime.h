@@ -19,5 +19,5 @@
 #ifdef __cplusplus
 extern "C"
 #endif
-_Noreturn void failure (char *s, ...);
+_Noreturn void failure (const char *s, ...);
 #endif
