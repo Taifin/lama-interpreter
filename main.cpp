@@ -1,7 +1,5 @@
-#include <cassert>
 #include <fstream>
 #include <iostream>
-#include <map>
 #include <string>
 
 #include "bytecode/bytefile.h"
@@ -11,7 +9,7 @@
 
 extern aint *__gc_stack_top, *__gc_stack_bottom; // NOLINT(*-reserved-identifier)
 
-FILE* debugFile = stderr;
+FILE *debugFile = stderr;
 #ifdef DEBUG_OUT
 #define DEBUG(fmt, ...) \
     do {fprintf(debugFile, fmt" %d\n", __VA_ARGS__, __LINE__)} while(0);
@@ -26,12 +24,12 @@ constexpr int CSTACK_SIZE = 1 << 20;
 aint vstack[VSTACK_SIZE];
 aint cstack[CSTACK_SIZE];
 
-aint* cstack_top = cstack + CSTACK_SIZE;
-aint* cstack_bottom = cstack + CSTACK_SIZE;
+aint *cstack_top = cstack + CSTACK_SIZE;
+aint *cstack_bottom = cstack + CSTACK_SIZE;
 
 #define SP (__gc_stack_top + 1)
 
-inline void verify_vstack(aint* location) {
+inline void verify_vstack(aint *location) {
     if (location >= __gc_stack_bottom) {
         failure("Virtual stack underflow! .loc: %.8x, .bot: %.8x", location, __gc_stack_bottom);
     }
@@ -40,7 +38,7 @@ inline void verify_vstack(aint* location) {
     }
 }
 
-inline void verify_cstack(aint* location) {
+inline void verify_cstack(aint *location) {
     if (location >= cstack_bottom) {
         failure("Call stack underflow! .loc: %.8x, .bot: %.8x", location, cstack_bottom);
     }
@@ -65,7 +63,7 @@ inline void vstack_push(aint val) {
     *SP = val;
 }
 
-inline void init_vstack(const bytefile* bf) {
+inline void init_vstack(const bytefile *bf) {
     DEBUG("Init vstack\n")
     __gc_stack_bottom = vstack + VSTACK_SIZE;
     __gc_stack_top = __gc_stack_bottom;
@@ -78,7 +76,7 @@ inline void init_vstack(const bytefile* bf) {
     vstack_push(0); // argc argv
 }
 
-inline void verify_cstack_underflow(int loc = 0, const char* msg = "Call stack underflow!") {
+inline void verify_cstack_underflow(int loc = 0, const char *msg = "Call stack underflow!") {
     if (cstack_top + loc >= cstack_bottom) {
         failure(msg);
     }
@@ -98,7 +96,7 @@ inline aint cstack_pop() {
 
 inline bool is_closure() {
     verify_cstack_underflow(4, "Invalid call stack: expected closure flag");
-    return (bool)*(cstack_top + 4);
+    return (bool) *(cstack_top + 4);
 }
 
 inline aint ret_addr() {
@@ -106,9 +104,9 @@ inline aint ret_addr() {
     return *(cstack_top + 3);
 }
 
-inline aint* frame_pointer() {
+inline aint *frame_pointer() {
     verify_cstack_underflow(2, "Invalid call stack: expected frame pointer");
-    return (aint*)*(cstack_top + 2);
+    return (aint *) *(cstack_top + 2);
 }
 
 inline aint nargs() {
@@ -122,7 +120,7 @@ inline aint nlocals() {
 }
 
 
-inline aint* global(bytefile* bf, int ind) {
+inline aint *global(bytefile *bf, int ind) {
     if (ind < 0 || ind >= bf->global_area_size) {
         auto msg = std::format("Requested global %d is out of bounds for [0, %d)", ind, bf->global_area_size);
         failure(msg.c_str());
@@ -133,7 +131,7 @@ inline aint* global(bytefile* bf, int ind) {
     return loc;
 }
 
-inline aint* arg(int ind) {
+inline aint *arg(int ind) {
     if (ind < 0 || ind >= nargs()) {
         auto msg = std::format("Requested argument %d is out of bounds for [0, %d)", ind, nargs());
         failure(msg.c_str());
@@ -144,7 +142,7 @@ inline aint* arg(int ind) {
     return loc;
 }
 
-inline aint* local(int ind) {
+inline aint *local(int ind) {
     auto nlcls = nlocals();
     if (ind < 0 || ind >= nlocals()) {
         auto msg = std::format("Requested local %d is out of bounds for [0, %d)", ind, nlocals());
@@ -156,7 +154,7 @@ inline aint* local(int ind) {
     return loc;
 }
 
-inline aint* closure_loc() {
+inline aint *closure_loc() {
     if (!is_closure()) {
         failure("Requested closure, but closure is not placed on stack");
     }
@@ -174,7 +172,7 @@ inline aint get_closure(int ind) {
         failure("Requested closure element %d, but the value on stack is not a closure", ind);
     }
 
-    return ((aint*)closureData->contents)[ind + 1];
+    return ((aint *) closureData->contents)[ind + 1];
 }
 
 inline void set_closure(int ind, aint value) {
@@ -185,7 +183,7 @@ inline void set_closure(int ind, aint value) {
         failure("Requested closure element %d, but the value on stack is not a closure", ind);
     }
 
-    ((aint*)closureData->contents)[ind + 1] = value;
+    ((aint *) closureData->contents)[ind + 1] = value;
 }
 
 struct Loc {
@@ -287,11 +285,11 @@ inline void execConst(int cnst) {
     vstack_push(BOX(cnst));
 }
 
-inline void execString(char * string) {
-    vstack_push((aint)Bstring((aint*)&string));
+inline void execString(char *string) {
+    vstack_push((aint) Bstring((aint *) &string));
 }
 
-inline void execSexp(char * tag, int nargs) {
+inline void execSexp(char *tag, int nargs) {
     aint args[nargs + 1];
 
     for (int i = nargs - 1; i >= 0; i--) {
@@ -300,7 +298,7 @@ inline void execSexp(char * tag, int nargs) {
 
     args[nargs] = LtagHash(tag);
 
-    auto result = (aint)Bsexp(args, BOX(nargs + 1));
+    auto result = (aint) Bsexp(args, BOX(nargs + 1));
 
     vstack_push(result);
 }
@@ -314,12 +312,12 @@ inline void execSta() {
     auto ind = vstack_pop();
     auto dst = vstack_pop();
 
-    void* result = Bsta((void*) dst, ind, (void*)val);
+    void *result = Bsta((void *) dst, ind, (void *) val);
 
-    vstack_push((aint)result);
+    vstack_push((aint) result);
 }
 
-inline void execSt(bytefile* bf, const Loc& loc) {
+inline void execSt(bytefile *bf, const Loc &loc) {
     auto value = vstack_pop();
     switch (loc.type) {
         case Loc::Type::G: {
@@ -364,12 +362,12 @@ inline void execElem() {
     auto ind = vstack_pop();
     auto src = vstack_pop();
 
-    auto res = Belem((void*) src, ind);
+    auto res = Belem((void *) src, ind);
 
-    vstack_push((aint)res);
+    vstack_push((aint) res);
 }
 
-inline void execLd(bytefile* bf, const Loc& loc) {
+inline void execLd(bytefile *bf, const Loc &loc) {
     aint value{};
     switch (loc.type) {
         case Loc::Type::G: {
@@ -393,19 +391,20 @@ inline void execLd(bytefile* bf, const Loc& loc) {
     vstack_push(value);
 }
 
-inline void execLda(bytefile*, const Loc&) {
+inline void execLda(bytefile *, const Loc &) {
     failure("LDA is not supported");
 }
 
-inline void update_ip(const bytefile* bf, char* &ip, char* newIp) {
+inline void update_ip(const bytefile *bf, char * &ip, char *newIp) {
     if (newIp < bf->code_ptr || newIp > bf->code_ptr + bf->size) {
-        failure("Cannot move instruction pointer %.8x to new %.8x, is out of bounds for [%.8x, %.8x]", ip, newIp, bf->code_ptr, bf->code_ptr + bf->size);
+        failure("Cannot move instruction pointer %.8x to new %.8x, is out of bounds for [%.8x, %.8x]", ip, newIp,
+                bf->code_ptr, bf->code_ptr + bf->size);
     }
 
     ip = newIp;
 }
 
-inline void execEnd(const bytefile* bf, char* &ip) {
+inline void execEnd(const bytefile *bf, char * &ip) {
     aint retval = 0;
     bool isRetval = false;
     if (SP < frame_pointer() + nlocals()) {
@@ -421,7 +420,7 @@ inline void execEnd(const bytefile* bf, char* &ip) {
         vstack_push(retval);
     }
 
-    update_ip(bf, ip, (char*)ret_addr());
+    update_ip(bf, ip, (char *) ret_addr());
 
     verify_cstack(cstack_top + 4); // same
     cstack_top += 5;
@@ -431,7 +430,7 @@ inline void execRet() {
     failure("RET is not supported");
 }
 
-inline void execCJmp(const bytefile*bf, char* &ip, aint addr, bool isNz) {
+inline void execCJmp(const bytefile *bf, char * &ip, aint addr, bool isNz) {
     auto val = UNBOX(vstack_pop());
     aint target{};
     if (isNz) {
@@ -452,7 +451,7 @@ inline void execCJmp(const bytefile*bf, char* &ip, aint addr, bool isNz) {
 }
 
 inline void execBegin(int n_args, int n_locals) {
-    cstack_push((aint)SP);
+    cstack_push((aint) SP);
     cstack_push(n_args);
     cstack_push(n_locals);
     for (int i = 0; i < n_locals; i++) {
@@ -460,28 +459,29 @@ inline void execBegin(int n_args, int n_locals) {
     }
 }
 
-inline void execTag(char* tag, int len) {
+inline void execTag(char *tag, int len) {
     auto dest = vstack_pop();
-    vstack_push(Btag((void*)dest, LtagHash(tag), BOX(len)));
+    vstack_push(Btag((void *) dest, LtagHash(tag), BOX(len)));
 }
 
 inline void execArray(int n) {
     auto dest = vstack_pop();
-    vstack_push(Barray_patt((void*)dest, BOX(n)));
+    vstack_push(Barray_patt((void *) dest, BOX(n)));
 }
 
 inline void execFail(int l, int c) {
     failure("Failed at %d %d", l, c);
 }
 
-inline void execLine(int) {}
+inline void execLine(int) {
+}
 
 inline void execPatt(int patt) {
     std::string pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
-    auto x = (void*)vstack_pop();
+    auto x = (void *) vstack_pop();
     switch (patt) {
         case 0: {
-            auto y = (void*)vstack_pop();
+            auto y = (void *) vstack_pop();
             vstack_push(Bstring_patt(x, y));
             break;
         }
@@ -525,11 +525,11 @@ inline void execLwrite() {
 
 inline void execLlength() {
     auto x = vstack_pop();
-    vstack_push(Llength((void*)x));
+    vstack_push(Llength((void *) x));
 }
 
 inline void execLstring() {
-    vstack_push((aint)Lstring(SP));
+    vstack_push((aint) Lstring(SP));
 }
 
 inline void execBarray(int n) {
@@ -537,10 +537,10 @@ inline void execBarray(int n) {
     for (auto i = 0; i < n; i++) {
         args[n - 1 - i] = vstack_pop();
     }
-    vstack_push((aint)Barray(args, BOX(n)));
+    vstack_push((aint) Barray(args, BOX(n)));
 }
 
-inline void execClosure(bytefile *bf, aint addr, int nargs, Loc* locs) {
+inline void execClosure(bytefile *bf, aint addr, int nargs, Loc *locs) {
     aint args[nargs + 1];
     for (int i = 1; i < nargs + 1; i++) {
         switch (auto [type, value] = locs[i - 1]; type) {
@@ -562,19 +562,19 @@ inline void execClosure(bytefile *bf, aint addr, int nargs, Loc* locs) {
         }
     }
     args[0] = addr;
-    vstack_push((aint)Bclosure(args, BOX(nargs)));
+    vstack_push((aint) Bclosure(args, BOX(nargs)));
 }
 
-inline void execCall(const bytefile*bf, char* &ip, size_t addr, int nargs) {
+inline void execCall(const bytefile *bf, char * &ip, size_t addr, int nargs) {
     verify_vstack(__gc_stack_top + nargs);
 
     cstack_push(false); // not a closure
-    cstack_push((aint)ip);
+    cstack_push((aint) ip);
 
     update_ip(bf, ip, bf->code_ptr + addr);
 }
 
-inline void execCallC(const bytefile*bf, char* &ip, int nargs) {
+inline void execCallC(const bytefile *bf, char * &ip, int nargs) {
     /*  stack frame is not yet complete:
      *  bottom
      *  ...
@@ -586,16 +586,16 @@ inline void execCallC(const bytefile*bf, char* &ip, int nargs) {
     auto closureLoc = SP + nargs;
     verify_vstack(closureLoc);
 
-    auto target = ((aint*)*closureLoc)[0];
+    auto target = ((aint *) *closureLoc)[0];
     cstack_push(true); // closure
-    cstack_push((aint)ip);
+    cstack_push((aint) ip);
 
     update_ip(bf, ip, bf->code_ptr + target);
 }
 
 void interpret(bytefile *bf) {
     char *ip = bf->code_ptr;
-    void (*lds[3])(bytefile*, const Loc&) = {execLd, execLda, execSt};
+    void (*lds[3])(bytefile *, const Loc &) = {execLd, execLda, execSt};
     do {
         char opcode = readByte(bf, ip),
                 h = (opcode & 0xF0) >> 4, // NOLINT(cppcoreguidelines-narrowing-conversions)
@@ -843,7 +843,6 @@ void interpret(bytefile *bf) {
             default:
                 failure("unexpected opcode default");
         }
-
     } while (true);
 stop:
     DEBUG("<end>\n");
@@ -855,11 +854,11 @@ int main(const int argc, char **argv) {
         return 1;
     }
 
-    bytefile* bf = readFile(argv[1]);
+    bytefile *bf = readFile(argv[1]);
     __gc_init();
     init_vstack(bf);
     cstack_push(false);
-    cstack_push((aint)(bf->code_ptr + bf->size));
+    cstack_push((aint) (bf->code_ptr + bf->size));
 
     interpret(bf);
 
