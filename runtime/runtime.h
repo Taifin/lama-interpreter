@@ -13,11 +13,12 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <time.h>
+#include <stdnoreturn.h>
 
 #define WORD_SIZE (CHAR_BIT * sizeof(ptrt))
 
 #ifdef __cplusplus
 extern "C"
 #endif
-_Noreturn void failure (const char *s, ...);
+[[noreturn]] void failure (const char *s, ...);
 #endif

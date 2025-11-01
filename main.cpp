@@ -122,8 +122,7 @@ inline aint nlocals() {
 
 inline aint *global(bytefile *bf, int ind) {
     if (ind < 0 || ind >= bf->global_area_size) {
-        auto msg = std::format("Requested global %d is out of bounds for [0, %d)", ind, bf->global_area_size);
-        failure(msg.c_str());
+        failure("Requested global %d is out of bounds for [0, %d)", ind, bf->global_area_size);
     }
 
     auto loc = __gc_stack_bottom - bf->global_area_size + ind;
@@ -133,8 +132,7 @@ inline aint *global(bytefile *bf, int ind) {
 
 inline aint *arg(int ind) {
     if (ind < 0 || ind >= nargs()) {
-        auto msg = std::format("Requested argument %d is out of bounds for [0, %d)", ind, nargs());
-        failure(msg.c_str());
+        failure("Requested argument %d is out of bounds for [0, %d)", ind, nargs());
     }
 
     auto loc = frame_pointer() + nargs() - 1 - ind;
@@ -145,8 +143,7 @@ inline aint *arg(int ind) {
 inline aint *local(int ind) {
     auto nlcls = nlocals();
     if (ind < 0 || ind >= nlocals()) {
-        auto msg = std::format("Requested local %d is out of bounds for [0, %d)", ind, nlocals());
-        failure(msg.c_str());
+        failure("Requested local %d is out of bounds for [0, %d)", ind, nlocals());
     }
 
     auto loc = frame_pointer() - nlcls + ind;
