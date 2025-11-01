@@ -1,3 +1,9 @@
 
 build/
 output/
+*.bout
+*.sout
+*.sol
+*.bc
+*.err
+*.input
