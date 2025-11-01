@@ -9,4 +9,3 @@ add_executable(lama_interpreter main.cpp
         bytecode/bytefile.cpp
         runtime/gc.c
 )
-add_compile_definitions(DEBUG)
