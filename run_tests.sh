@@ -11,9 +11,9 @@ set -euo pipefail
 
 LAMA_ROOT="."
 DIRS=(
-  "regression"
-  "regression_long/deep-expressions"
-  "regression_long/expressions"
+  "regression/regression"
+  "regression/deep-expressions"
+  "regression/expressions"
 )
 
 BUILD_DIR="build"
@@ -38,18 +38,22 @@ passed_tests=0
 run_test() {
   local lama_file="$1"
   local base="$(basename "$lama_file" .lama)"
-  local dir="$(dirname "$lama_file")"
-  local input_file="$dir/$base.input"
-  local bc_in_out="$OUT_DIR/$base.bc"
-  local sol_file="$OUT_DIR/$base.sol"
-  local out_file="$OUT_DIR/$base.out"
-  local err_file="$OUT_DIR/$base.err"
+  local dir_rel
+  dir_rel="$(dirname "${lama_file#${LAMA_ROOT}/}")"
+  local out_subdir="$OUT_DIR/$dir_rel"
+  mkdir -p "$out_subdir"
+
+  local input_file="$(dirname "$lama_file")/$base.input"
+  local bc_in_out="$out_subdir/$base.bc"
+  local sol_file="$out_subdir/$base.sol"
+  local out_file="$out_subdir/$base.out"
+  local err_file="$out_subdir/$base.err"
 
   echo "running test $base"
 
   if [[ ! -f "$bc_in_out" ]]; then
-    pushd "$OUT_DIR" >/dev/null
-    if ! lamac -b "../$lama_file" >/dev/null; then
+    pushd "$out_subdir" >/dev/null
+    if ! lamac -b "../../../$lama_file"; then
       echo "ERROR: lamac bytecode compilation failed for $lama_file"
       popd >/dev/null
       return 0

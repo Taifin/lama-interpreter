@@ -7,3 +7,4 @@ output/
 *.bc
 *.err
 *.input
+.DS_Store
