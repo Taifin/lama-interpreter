@@ -12,7 +12,7 @@ extern aint *__gc_stack_top, *__gc_stack_bottom; // NOLINT(*-reserved-identifier
 FILE *debugFile = stderr;
 #ifdef DEBUG_OUT
 #define DEBUG(fmt, ...) \
-    do {fprintf(debugFile, fmt" %d\n", __VA_ARGS__, __LINE__)} while(0);
+    do { fprintf(debugFile, fmt, __VA_ARGS__); } while(0);
 #else
 #define DEBUG(fmt, ...) \
 ;
@@ -29,21 +29,21 @@ aint *cstack_bottom = cstack + CSTACK_SIZE;
 
 #define SP (__gc_stack_top + 1)
 
-inline void verify_vstack(aint *location) {
+inline void verify_vstack(aint *location, const std::string& trace) {
     if (location >= __gc_stack_bottom) {
-        failure("Virtual stack underflow! .loc: %.8x, .bot: %.8x", location, __gc_stack_bottom);
+        failure("Virtual stack underflow! .loc: %.8x, .bot: %.8x, trace: %s", location, __gc_stack_bottom, trace.c_str());
     }
     if (location <= vstack) {
-        failure("Virtual stack overflow! .loc: %.8x, .top: %.8x", location, vstack);
+        failure("Virtual stack overflow! .loc: %.8x, .top: %.8x, trace: %s", location, vstack, trace.c_str());
     }
 }
 
-inline void verify_cstack(aint *location) {
+inline void verify_cstack(aint *location, const std::string& trace) {
     if (location >= cstack_bottom) {
-        failure("Call stack underflow! .loc: %.8x, .bot: %.8x", location, cstack_bottom);
+        failure("Call stack underflow! .loc: %.8x, .bot: %.8x, trace: %s", location, cstack_bottom, trace.c_str());
     }
     if (location <= cstack) {
-        failure("Call stack overflow! .loc: %.8x, .top: %.8x", location, cstack);
+        failure("Call stack overflow! .loc: %.8x, .top: %.8x, trace: %s", location, cstack, trace.c_str());
     }
 }
 
@@ -64,11 +64,11 @@ inline void vstack_push(aint val) {
 }
 
 inline void init_vstack(const bytefile *bf) {
-    DEBUG("Init vstack\n")
+    DEBUG("Init vstack %s\n", "")
     __gc_stack_bottom = vstack + VSTACK_SIZE;
     __gc_stack_top = __gc_stack_bottom;
 
-    DEBUG(std::format("Allocate %d globals\n", bf->global_area_size))
+    DEBUG("Allocate %d globals\n", bf->global_area_size)
     for (auto i = 0; i < bf->global_area_size; i++) {
         vstack_push(bf->global_ptr[bf->global_area_size - i - 1]);
     }
@@ -127,7 +127,7 @@ inline aint *global(bytefile *bf, int ind) {
     }
 
     auto loc = __gc_stack_bottom - bf->global_area_size + ind;
-    verify_vstack(loc);
+    verify_vstack(loc, ".global");
     return loc;
 }
 
@@ -138,7 +138,7 @@ inline aint *arg(int ind) {
     }
 
     auto loc = frame_pointer() + nargs() - 1 - ind;
-    verify_vstack(loc);
+    verify_vstack(loc, ".arg");
     return loc;
 }
 
@@ -150,7 +150,7 @@ inline aint *local(int ind) {
     }
 
     auto loc = frame_pointer() - nlcls + ind;
-    verify_vstack(loc);
+    verify_vstack(loc, ".local");
     return loc;
 }
 
@@ -160,11 +160,11 @@ inline aint *closure_loc() {
     }
 
     auto loc = frame_pointer() + nargs();
-    verify_vstack(loc);
+    verify_vstack(loc, ".closure");
     return loc;
 }
 
-inline aint get_closure(int ind) {
+inline aint* closure(int ind) {
     auto closureLoc = closure_loc();
     auto closureData = TO_DATA(*closureLoc);
 
@@ -172,19 +172,9 @@ inline aint get_closure(int ind) {
         failure("Requested closure element %d, but the value on stack is not a closure", ind);
     }
 
-    return ((aint *) closureData->contents)[ind + 1];
+    return &((aint *) closureData->contents)[ind + 1];
 }
 
-inline void set_closure(int ind, aint value) {
-    auto closureLoc = closure_loc();
-    auto closureData = TO_DATA(*closureLoc);
-
-    if (TAG(closureData->data_header) != CLOSURE_TAG) {
-        failure("Requested closure element %d, but the value on stack is not a closure", ind);
-    }
-
-    ((aint *) closureData->contents)[ind + 1] = value;
-}
 
 struct Loc {
     enum class Type {
@@ -290,16 +280,16 @@ inline void execString(char *string) {
 }
 
 inline void execSexp(char *tag, int nargs) {
-    aint args[nargs + 1];
-
-    for (int i = nargs - 1; i >= 0; i--) {
-        args[i] = vstack_pop();
+    if (nargs < 0) {
+        failure("Invalid SEXP op: negative length %d", nargs);
     }
 
-    args[nargs] = LtagHash(tag);
+    verify_vstack(SP + nargs, ".sexp");
+    vstack_push(LtagHash(tag));
 
-    auto result = (aint) Bsexp(args, BOX(nargs + 1));
+    auto result = (aint) Bsexp(SP, BOX(nargs + 1));
 
+    __gc_stack_top += nargs + 1;
     vstack_push(result);
 }
 
@@ -333,7 +323,7 @@ inline void execSt(bytefile *bf, const Loc &loc) {
             break;
         }
         case Loc::Type::C: {
-            set_closure(loc.value, value);
+            *closure(loc.value) =  value;
             break;
         }
     }
@@ -367,7 +357,7 @@ inline void execElem() {
     vstack_push((aint) res);
 }
 
-inline void execLd(bytefile *bf, const Loc &loc) {
+inline aint load(bytefile * bf, const Loc &loc) {
     aint value{};
     switch (loc.type) {
         case Loc::Type::G: {
@@ -383,12 +373,15 @@ inline void execLd(bytefile *bf, const Loc &loc) {
             break;
         }
         case Loc::Type::C: {
-            value = get_closure(loc.value);
+            value = *closure(loc.value);
             break;
         }
     }
+    return value;
+}
 
-    vstack_push(value);
+inline void execLd(bytefile *bf, const Loc &loc) {
+    vstack_push(load(bf, loc));
 }
 
 inline void execLda(bytefile *, const Loc &) {
@@ -413,7 +406,7 @@ inline void execEnd(const bytefile *bf, char * &ip) {
     }
 
     auto loc = frame_pointer() + nargs() + static_cast<int>(is_closure()) - 1;
-    verify_vstack(loc - 1); // it's ok to have an empty vstack after end
+    verify_vstack(loc - 1, ".end"); // it's ok to have an empty vstack after end
     __gc_stack_top = loc;
 
     if (isRetval) {
@@ -422,7 +415,7 @@ inline void execEnd(const bytefile *bf, char * &ip) {
 
     update_ip(bf, ip, (char *) ret_addr());
 
-    verify_cstack(cstack_top + 4); // same
+    verify_cstack(cstack_top + 4, ".end"); // same
     cstack_top += 5;
 }
 
@@ -540,33 +533,12 @@ inline void execBarray(int n) {
     vstack_push((aint) Barray(args, BOX(n)));
 }
 
-inline void execClosure(bytefile *bf, aint addr, int nargs, Loc *locs) {
-    aint args[nargs + 1];
-    for (int i = 1; i < nargs + 1; i++) {
-        switch (auto [type, value] = locs[i - 1]; type) {
-            case Loc::Type::G: {
-                args[i] = *global(bf, value);
-                break;
-            }
-            case Loc::Type::L: {
-                args[i] = *local(value);
-                break;
-            }
-            case Loc::Type::A: {
-                args[i] = *arg(value);
-                break;
-            }
-            case Loc::Type::C: {
-                args[i] = get_closure(value);
-            }
-        }
-    }
-    args[0] = addr;
+inline void execClosure(int nargs, aint* args) {
     vstack_push((aint) Bclosure(args, BOX(nargs)));
 }
 
 inline void execCall(const bytefile *bf, char * &ip, size_t addr, int nargs) {
-    verify_vstack(__gc_stack_top + nargs);
+    verify_vstack(SP + nargs, ".call");
 
     cstack_push(false); // not a closure
     cstack_push((aint) ip);
@@ -583,8 +555,10 @@ inline void execCallC(const bytefile *bf, char * &ip, int nargs) {
      *  ...
      *  arg[0] = sp
      */
+    verify_vstack(SP + nargs, ".callC");
+
     auto closureLoc = SP + nargs;
-    verify_vstack(closureLoc);
+    verify_vstack(closureLoc, ".callC");
 
     auto target = ((aint *) *closureLoc)[0];
     cstack_push(true); // closure
@@ -638,13 +612,13 @@ void interpret(bytefile *bf) {
                     }
 
                     case 3: {
-                        DEBUG("STI");
+                        DEBUG("STI%s", "");
                         execSti();
                         break;
                     }
 
                     case 4: {
-                        DEBUG("STA");
+                        DEBUG("STA%s", "");
                         execSta();
                         break;
                     }
@@ -657,38 +631,38 @@ void interpret(bytefile *bf) {
                     }
 
                     case 6: {
-                        DEBUG("END");
+                        DEBUG("END%s", "");
                         execEnd(bf, ip);
                         if (ip == bf->code_ptr + bf->size) return;
                         break;
                     }
 
                     case 7: {
-                        DEBUG("RET");
+                        DEBUG("RET%s" ,"");
                         execRet();
                         break;
                     }
 
                     case 8: {
-                        DEBUG("DROP");
+                        DEBUG("DROP%s", "");
                         execDrop();
                         break;
                     }
 
                     case 9: {
-                        DEBUG("DUP");
+                        DEBUG("DUP%s", "");
                         execDup();
                         break;
                     }
 
                     case 10: {
-                        DEBUG("SWAP");
+                        DEBUG("SWAP%s", "");
                         execSwap();
                         break;
                     }
 
                     case 11: {
-                        DEBUG("ELEM");
+                        DEBUG("ELEM%s", "");
                         execElem();
                         break;
                     }
@@ -733,12 +707,14 @@ void interpret(bytefile *bf) {
                         auto addr = readInt(bf, ip);
                         auto nLocs = readInt(bf, ip);
                         DEBUG("CLOSURE\t0x%.8x\t%d", addr, nLocs);
-                        Loc locs[nLocs];
+                        aint args[nLocs + 1];
                         for (int i = 0; i < nLocs; i++) {
                             char locType = readByte(bf, ip);
-                            locs[i] = readLoc(bf, ip, locType);
+                            auto loc = readLoc(bf, ip, locType);
+                            args[i + 1] = load(bf, loc);
                         }
-                        execClosure(bf, addr, nLocs, locs);
+                        args[0] = addr;
+                        execClosure(nLocs, args);
                         break;
                     }
 
@@ -804,25 +780,25 @@ void interpret(bytefile *bf) {
             case 7: {
                 switch (l) {
                     case 0: {
-                        DEBUG("CALL\tLread");
+                        DEBUG("CALL\t%s", "Lread");
                         execLread();
                         break;
                     }
 
                     case 1: {
-                        DEBUG("CALL\tLwrite");
+                        DEBUG("CALL\t%s", "Lwrite");
                         execLwrite();
                         break;
                     }
 
                     case 2: {
-                        DEBUG("CALL\tLlength");
+                        DEBUG("CALL\t%s", "Llength");
                         execLlength();
                         break;
                     }
 
                     case 3: {
-                        DEBUG("CALL\tLstring");
+                        DEBUG("CALL\t%s", "Lstring");
                         execLstring();
                         break;
                     }
@@ -843,9 +819,10 @@ void interpret(bytefile *bf) {
             default:
                 failure("unexpected opcode default");
         }
+    DEBUG("\n%s", "")
     } while (true);
 stop:
-    DEBUG("<end>\n");
+    DEBUG("<end>%s\n", "");
 }
 
 int main(const int argc, char **argv) {

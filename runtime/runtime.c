@@ -853,20 +853,20 @@ extern void *Bsexp (aint* args, const aint bn) {
 
   aint fields_cnt = n - 1;
 
-  for (aint i = 0; i < fields_cnt; i++) {
+  for (aint i = 1; i <= fields_cnt; i++) {
     push_extra_root((void**)&args[i]);
   }
 
   r              = alloc_sexp(fields_cnt);
   r->tag         = 0;
 
-  for (int i = 0; i < fields_cnt; i++) {
-    ((auint *)r->contents)[i] = args[i];
+  for (int i = 1; i <= fields_cnt; i++) {
+    ((auint *)r->contents)[fields_cnt - i] = args[i];
   }
 
-  r->tag = UNBOX(args[fields_cnt]);
+  r->tag = UNBOX(args[0]);
 
-  for (aint i = fields_cnt - 1; i >= 0; --i) {
+  for (aint i = fields_cnt; i >= 1; --i) {
     pop_extra_root((void**)&args[i]);
   }
 
