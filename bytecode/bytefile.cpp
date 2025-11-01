@@ -2,20 +2,18 @@
 #include "../runtime/runtime_common.h"
 #include "../runtime/runtime.h"
 
-size_t bf_size;
-
 /* Gets a string from a string table by an index */
-char *get_string(bytefile *f, int pos) {
+char *get_string(bytefile *f, const int pos) {
     return &f->string_ptr[pos];
 }
 
 /* Gets a name for a public symbol */
-char *get_public_name(bytefile *f, int i) {
+char *get_public_name(bytefile *f, const int i) {
     return get_string(f, f->public_ptr[i * 2]);
 }
 
 /* Gets an offset for a publie symbol */
-int get_public_offset(bytefile *f, int i) {
+int get_public_offset(bytefile *f, const int i) {
     return f->public_ptr[i * 2 + 1];
 }
 
@@ -51,7 +49,7 @@ bytefile *readFile(const std::string &filename) {
     bf->public_ptr = (int *) bf->buffer;
     bf->code_ptr = &bf->string_ptr[bf->stringtab_size];
     bf->global_ptr = (int *) malloc(bf->global_area_size * sizeof(int));
-    bf_size = size;
+    bf->size = size;
 
     return bf;
 }

@@ -186,7 +186,7 @@ int files_cmp (FILE *f1, FILE *f2) {
 
 #endif
 
-void *gc_alloc_on_existing_heap (size_t size) {
+void *gc_alloc_on_existing_heap (const size_t size) {
   if (heap.current + size <= heap.end) {
     void *p = (void *)heap.current;
     heap.current += size;
@@ -196,7 +196,7 @@ void *gc_alloc_on_existing_heap (size_t size) {
   return NULL;
 }
 
-void *gc_alloc (size_t size) {
+void *gc_alloc (const size_t size) {
 #ifdef DEBUG_PRINT
   printf("Reallocation!\n");
 #endif
@@ -273,7 +273,7 @@ void mark_phase (void) {
 #endif
 }
 
-void compact_phase (size_t additional_size) {
+void compact_phase (const size_t additional_size) {
   size_t live_size = compute_locations();
 
   // all in words
@@ -699,7 +699,7 @@ size_t get_forward_address (void *obj) {
   return GET_FORWARD_ADDRESS(d->forward_address);
 }
 
-void set_forward_address (void *obj, size_t addr) {
+void set_forward_address (void *obj, const size_t addr) {
   data *d = TO_DATA(obj);
   SET_FORWARD_ADDRESS(d->forward_address, addr);
 }
@@ -813,16 +813,16 @@ size_t obj_size_header_ptr (void *ptr) {
   }
 }
 
-size_t array_size (size_t sz) { return get_header_size(ARRAY) + MEMBER_SIZE * sz; }
+size_t array_size (const size_t sz) { return get_header_size(ARRAY) + MEMBER_SIZE * sz; }
 
-size_t string_size (size_t len) {
+size_t string_size (const size_t len) {
   // string should be null terminated
   return get_header_size(STRING) + len + 1;
 }
 
-size_t closure_size (size_t sz) { return get_header_size(CLOSURE) + MEMBER_SIZE * sz; }
+size_t closure_size (const size_t sz) { return get_header_size(CLOSURE) + MEMBER_SIZE * sz; }
 
-size_t sexp_size (size_t members) { return get_header_size(SEXP) + MEMBER_SIZE * (members + 1); }
+size_t sexp_size (const size_t members) { return get_header_size(SEXP) + MEMBER_SIZE * (members + 1); }
 
 obj_field_iterator field_begin_iterator (void *obj) {
   lama_type          type = get_type_header_ptr(obj);
@@ -875,7 +875,7 @@ void *get_object_content_ptr (void *header_ptr) {
 
 void *get_end_of_obj (void *header_ptr) { return header_ptr + obj_size_header_ptr(header_ptr); }
 
-size_t get_header_size (lama_type type) {
+size_t get_header_size (const lama_type type) {
   switch (type) {
     case STRING:
     case CLOSURE:
@@ -889,7 +889,7 @@ size_t get_header_size (lama_type type) {
   }
 }
 
-void *alloc_string (auint len) {
+void *alloc_string (const auint len) {
   data *obj        = alloc(string_size(len));
   obj->data_header = STRING_TAG | (len << 3);
 #if defined(DEBUG_VERSION) && defined(DEBUG_PRINT)
@@ -905,7 +905,7 @@ void *alloc_string (auint len) {
   return obj;
 }
 
-void *alloc_array (auint len) {
+void *alloc_array (const auint len) {
   data *obj        = alloc(array_size(len));
   obj->data_header = ARRAY_TAG | (len << 3);
 #if defined(DEBUG_VERSION) && defined(DEBUG_PRINT)
@@ -921,7 +921,7 @@ void *alloc_array (auint len) {
   return obj;
 }
 
-void *alloc_sexp (auint members) {
+void *alloc_sexp (const auint members) {
   sexp *obj        = alloc(sexp_size(members));
   obj->data_header = SEXP_TAG | (members << 3);
 #if defined(DEBUG_VERSION) && defined(DEBUG_PRINT)
@@ -938,7 +938,7 @@ void *alloc_sexp (auint members) {
   return obj;
 }
 
-void *alloc_closure (auint captured) {
+void *alloc_closure (const auint captured) {
 
   data *obj        = alloc(closure_size(captured));
   obj->data_header = CLOSURE_TAG | (captured << 3);

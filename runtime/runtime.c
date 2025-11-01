@@ -16,7 +16,7 @@ extern size_t __gc_stack_top, __gc_stack_bottom;
 #define POST_GC()                                                                                  \
   if (flag) { __gc_stack_top = 0; }
 
-_Noreturn static void vfailure (const char *s, va_list args) {
+_Noreturn static void vfailure (const char *s, const va_list args) {
   fprintf(stderr, "*** FAILURE: ");
   vfprintf(stderr, s, args);   // vprintf (char *, va_list) <-> printf (char *, ...)
   exit(255);
@@ -491,7 +491,7 @@ extern regex_t *Lregexp (char *regexp) {
   return regexp_compiled;
 }
 
-extern aint LregexpMatch (regex_t *b, char *s, aint pos) {
+extern aint LregexpMatch (regex_t *b, char *s, const aint pos) {
   regmatch_t match;
 
   ASSERT_BOXED("regexpMatch:1", b);
@@ -558,7 +558,7 @@ void *Lclone (aint* args /*void *p*/) {
 #define HASH_APPEND(acc, x)                                                                        \
   (((acc + (auint)x) << (WORD_SIZE / 2)) | ((acc + (auint)x) >> (WORD_SIZE / 2)))
 
-aint inner_hash (aint depth, auint acc, void *p) {
+aint inner_hash (const aint depth, auint acc, void *p) {
   if (depth > HASH_DEPTH) return acc;
 
   if (UNBOXED(p)) return HASH_APPEND(acc, UNBOX(p));
@@ -698,7 +698,7 @@ extern void *Belem (void *p, aint i) {
   }
 }
 
-extern void *LmakeArray (aint length) {
+extern void *LmakeArray (const aint length) {
   data *r;
   aint   n, *p;
 
@@ -717,7 +717,7 @@ extern void *LmakeArray (aint length) {
   return r->contents;
 }
 
-extern void *LmakeString (aint length) {
+extern void *LmakeString (const aint length) {
   aint   n = UNBOX(length);
   data *r;
 
@@ -791,7 +791,7 @@ extern void *Lstring (aint* args /* void *p */) {
   return s;
 }
 
-extern void *Bclosure (aint* args, aint bn) {
+extern void *Bclosure (aint* args, const aint bn) {
   data         *r;
   aint           n = UNBOX(bn);
 
@@ -817,7 +817,7 @@ extern void *Bclosure (aint* args, aint bn) {
   return r->contents;
 }
 
-extern void *Barray (aint* args, aint bn) {
+extern void *Barray (aint* args, const aint bn) {
   data   *r;
   aint     n = UNBOX(bn);
   
@@ -845,7 +845,7 @@ extern void *Barray (aint* args, aint bn) {
 extern memory_chunk heap;
 #endif
 
-extern void *Bsexp (aint* args, aint bn) {
+extern void *Bsexp (aint* args, const aint bn) {
   sexp   *r;
   aint     n = UNBOX(bn);
 
@@ -874,7 +874,7 @@ extern void *Bsexp (aint* args, aint bn) {
   return (void *)((data *)r)->contents;
 }
 
-extern aint Btag (void *d, aint t, aint n) {
+extern aint Btag (void *d, const aint t, const aint n) {
   data *r;
 
   if (UNBOXED(d)) return BOX(0);
@@ -889,7 +889,7 @@ aint get_tag (data *d) { return TAG(d->data_header); }
 
 aint get_len (data *d) { return LEN(d->data_header); }
 
-extern aint Barray_patt (void *d, aint n) {
+extern aint Barray_patt (void *d, const aint n) {
   data *r;
 
   if (UNBOXED(d)) return BOX(0);
@@ -943,7 +943,7 @@ extern aint Bsexp_tag_patt (void *x) {
   return BOX(TAG(TO_DATA(x)->data_header) == SEXP_TAG);
 }
 
-extern void *Bsta (void *x, aint i, void *v) {
+extern void *Bsta (void *x, const aint i, void *v) {
   if (UNBOXED(i)) {
     ASSERT_BOXED(".sta:3", x);
     data *d = TO_DATA(x);
@@ -968,7 +968,7 @@ extern void *Bsta (void *x, aint i, void *v) {
   return v;
 }
 
-extern void Bmatch_failure (void *v, char *fname, aint line, aint col) {
+extern void Bmatch_failure (void *v, char *fname, const aint line, const aint col) {
   createStringBuf();
   printValue(v);
   failure("match failure at %s:%ld:%ld, value '%s'\n",
@@ -1032,7 +1032,7 @@ extern aint Lsystem (char *cmd) { return BOX(system(cmd)); }
 #ifndef X86_64
 // In X86_64 we are not able to modify va_arg
 
-static void fix_unboxed (char *s, va_list va) {
+static void fix_unboxed (char *s, const va_list va) {
   aint *p = (aint *)va;
   aint     i = 0;
 
@@ -1279,14 +1279,14 @@ extern int Lbinoperror2 (void) {
 }
 
 /* Lwrite is an implementation of the "write" construct */
-extern aint Lwrite (aint n) {
+extern aint Lwrite (const aint n) {
   printf("%" PRIdAI "\n", UNBOX(n));
   fflush(stdout);
 
   return 0;
 }
 
-extern aint Lrandom (aint n) {
+extern aint Lrandom (const aint n) {
   ASSERT_UNBOXED("Lrandom, 0", n);
 
   if (UNBOX(n) <= 0) { failure("invalid range in random: %ld\n", UNBOX(n)); }
@@ -1302,7 +1302,7 @@ extern aint Ltime () {
   return BOX(t.tv_sec * 1000000 + t.tv_nsec / 1000);
 }
 
-extern void set_args (aint argc, char *argv[]) {
+extern void set_args (const aint argc, char *argv[]) {
   aint   n = argc;
   aint  *p = NULL;
   aint   i;
