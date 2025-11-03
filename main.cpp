@@ -29,27 +29,48 @@ aint *cstack_bottom = cstack + CSTACK_SIZE;
 
 #define SP (__gc_stack_top + 1)
 
-inline void verify_vstack(aint *location, const std::string& trace) {
+struct State {
+    bytefile *bf = nullptr;
+    char *ip = nullptr;
+    char opcode = -1;
+
+    void fail(const char *s, ...) const {
+        va_list args;
+        va_start(args, s);
+
+        if (bf != nullptr && ip != nullptr) {
+            fprintf(
+                stderr, "Failure.\n\tinstruction offset: 0x%.8lx\n\topcode: %d\n\tvstack: 0x%.8lx\n\tcstack: 0x%.8lx\n",
+                ip - bf->code_ptr - 1, opcode, __gc_stack_top, cstack_top);
+        }
+        failure(s, args);
+    }
+};
+
+State state;
+
+inline void verify_vstack(aint *location, const std::string &trace) {
     if (location >= __gc_stack_bottom) {
-        failure("Virtual stack underflow! .loc: %.8x, .bot: %.8x, trace: %s", location, __gc_stack_bottom, trace.c_str());
+        state.fail("Virtual stack underflow! .loc: %.8x, .bot: %.8x, trace: %s", location, __gc_stack_bottom,
+                   trace.c_str());
     }
     if (location <= vstack) {
-        failure("Virtual stack overflow! .loc: %.8x, .top: %.8x, trace: %s", location, vstack, trace.c_str());
+        state.fail("Virtual stack overflow! .loc: %.8x, .top: %.8x, trace: %s", location, vstack, trace.c_str());
     }
 }
 
-inline void verify_cstack(aint *location, const std::string& trace) {
+inline void verify_cstack(aint *location, const std::string &trace) {
     if (location >= cstack_bottom) {
-        failure("Call stack underflow! .loc: %.8x, .bot: %.8x, trace: %s", location, cstack_bottom, trace.c_str());
+        state.fail("Call stack underflow! .loc: %.8x, .bot: %.8x, trace: %s", location, cstack_bottom, trace.c_str());
     }
     if (location <= cstack) {
-        failure("Call stack overflow! .loc: %.8x, .top: %.8x, trace: %s", location, cstack, trace.c_str());
+        state.fail("Call stack overflow! .loc: %.8x, .top: %.8x, trace: %s", location, cstack, trace.c_str());
     }
 }
 
 inline aint vstack_pop() {
     if (__gc_stack_top >= __gc_stack_bottom) {
-        failure("Virtual stack underflow!");
+        state.fail("Virtual stack underflow!");
     }
     __gc_stack_top += 1;
     return *(SP - 1);
@@ -57,7 +78,7 @@ inline aint vstack_pop() {
 
 inline void vstack_push(aint val) {
     if (vstack >= __gc_stack_top) {
-        failure("Virtual stack overflow!");
+        state.fail("Virtual stack overflow!");
     }
     __gc_stack_top -= 1;
     *SP = val;
@@ -78,13 +99,13 @@ inline void init_vstack(const bytefile *bf) {
 
 inline void verify_cstack_underflow(int loc = 0, const char *msg = "Call stack underflow!") {
     if (cstack_top + loc >= cstack_bottom) {
-        failure(msg);
+        state.fail(msg);
     }
 }
 
 inline void cstack_push(aint val) {
     if (cstack_top <= cstack) {
-        failure("Call stack overflow!");
+        state.fail("Call stack overflow!");
     }
     *--cstack_top = val;
 }
@@ -122,7 +143,7 @@ inline aint nlocals() {
 
 inline aint *global(bytefile *bf, int ind) {
     if (ind < 0 || ind >= bf->global_area_size) {
-        failure("Requested global %d is out of bounds for [0, %d)", ind, bf->global_area_size);
+        state.fail("Requested global %d is out of bounds for [0, %d)", ind, bf->global_area_size);
     }
 
     auto loc = __gc_stack_bottom - bf->global_area_size + ind;
@@ -132,7 +153,7 @@ inline aint *global(bytefile *bf, int ind) {
 
 inline aint *arg(int ind) {
     if (ind < 0 || ind >= nargs()) {
-        failure("Requested argument %d is out of bounds for [0, %d)", ind, nargs());
+        state.fail("Requested argument %d is out of bounds for [0, %d)", ind, nargs());
     }
 
     auto loc = frame_pointer() + nargs() - 1 - ind;
@@ -143,7 +164,7 @@ inline aint *arg(int ind) {
 inline aint *local(int ind) {
     auto nlcls = nlocals();
     if (ind < 0 || ind >= nlocals()) {
-        failure("Requested local %d is out of bounds for [0, %d)", ind, nlocals());
+        state.fail("Requested local %d is out of bounds for [0, %d)", ind, nlocals());
     }
 
     auto loc = frame_pointer() - nlcls + ind;
@@ -153,7 +174,7 @@ inline aint *local(int ind) {
 
 inline aint *closure_loc() {
     if (!is_closure()) {
-        failure("Requested closure, but closure is not placed on stack");
+        state.fail("Requested closure, but closure is not placed on stack");
     }
 
     auto loc = frame_pointer() + nargs();
@@ -161,12 +182,12 @@ inline aint *closure_loc() {
     return loc;
 }
 
-inline aint* closure(int ind) {
+inline aint *closure(int ind) {
     auto closureLoc = closure_loc();
     auto closureData = TO_DATA(*closureLoc);
 
     if (TAG(closureData->data_header) != CLOSURE_TAG) {
-        failure("Requested closure element %d, but the value on stack is not a closure", ind);
+        state.fail("Requested closure element %d, but the value on stack is not a closure", ind);
     }
 
     return &((aint *) closureData->contents)[ind + 1];
@@ -187,7 +208,7 @@ struct Loc {
 
 inline char readByte(const bytefile *f, char * &ip) {
     if (ip + 1 < f->code_ptr || ip + 1 >= f->code_ptr + f->size) {
-        failure("Instruction pointer %.8x out of bounds [%.8x, %.8x)", ip, f->code_ptr, f->code_ptr + f->size);
+        state.fail("Instruction pointer %.8x out of bounds [%.8x, %.8x)", ip, f->code_ptr, f->code_ptr + f->size);
     }
     return *ip++;
 }
@@ -195,7 +216,7 @@ inline char readByte(const bytefile *f, char * &ip) {
 inline int readInt(const bytefile *f, char * &ip) {
     ip += sizeof(int);
     if (ip < f->code_ptr || ip >= f->code_ptr + f->size) {
-        failure("Instruction pointer %.8x out of bounds [%.8x, %.8x)", ip, f->code_ptr, f->code_ptr + f->size);
+        state.fail("Instruction pointer %.8x out of bounds [%.8x, %.8x)", ip, f->code_ptr, f->code_ptr + f->size);
     }
     return *reinterpret_cast<int *>(ip - sizeof(int));
 }
@@ -203,7 +224,7 @@ inline int readInt(const bytefile *f, char * &ip) {
 inline char *readString(const bytefile *f, char * &ip) {
     int pos = readInt(f, ip);
     if (pos < 0 || pos > f->stringtab_size) {
-        failure("Requested string %d is out of bounds for [0, %d)", pos, f->stringtab_size);
+        state.fail("Requested string %d is out of bounds for [0, %d)", pos, f->stringtab_size);
     }
     return &f->string_ptr[pos];
 }
@@ -221,7 +242,7 @@ inline Loc readLoc(const bytefile *f, char * &ip, char byte) {
         case 3:
             return Loc(Loc::Type::C, val);
         default:
-            failure("Unsupported loc type %d", byte);
+            state.fail("Unsupported loc type %d", byte);
     }
 }
 
@@ -278,7 +299,7 @@ inline void execString(char *string) {
 
 inline void execSexp(char *tag, int nargs) {
     if (nargs < 0) {
-        failure("Invalid SEXP op: negative length %d", nargs);
+        state.fail("Invalid SEXP op: negative length %d", nargs);
     }
 
     verify_vstack(SP + nargs, ".sexp");
@@ -291,7 +312,7 @@ inline void execSexp(char *tag, int nargs) {
 }
 
 inline void execSti() {
-    failure("Unsupported instruction STI");
+    state.fail("Unsupported instruction STI");
 }
 
 inline void execSta() {
@@ -320,7 +341,7 @@ inline void execSt(bytefile *bf, const Loc &loc) {
             break;
         }
         case Loc::Type::C: {
-            *closure(loc.value) =  value;
+            *closure(loc.value) = value;
             break;
         }
     }
@@ -354,7 +375,7 @@ inline void execElem() {
     vstack_push((aint) res);
 }
 
-inline aint load(bytefile * bf, const Loc &loc) {
+inline aint load(bytefile *bf, const Loc &loc) {
     aint value{};
     switch (loc.type) {
         case Loc::Type::G: {
@@ -382,13 +403,13 @@ inline void execLd(bytefile *bf, const Loc &loc) {
 }
 
 inline void execLda(bytefile *, const Loc &) {
-    failure("LDA is not supported");
+    state.fail("LDA is not supported");
 }
 
 inline void update_ip(const bytefile *bf, char * &ip, char *newIp) {
     if (newIp < bf->code_ptr || newIp > bf->code_ptr + bf->size) {
-        failure("Cannot move instruction pointer %.8x to new %.8x, is out of bounds for [%.8x, %.8x]", ip, newIp,
-                bf->code_ptr, bf->code_ptr + bf->size);
+        state.fail("Cannot move instruction pointer %.8x to new %.8x, is out of bounds for [%.8x, %.8x]", ip, newIp,
+                   bf->code_ptr, bf->code_ptr + bf->size);
     }
 
     ip = newIp;
@@ -417,7 +438,7 @@ inline void execEnd(const bytefile *bf, char * &ip) {
 }
 
 inline void execRet() {
-    failure("RET is not supported");
+    state.fail("RET is not supported");
 }
 
 inline void execCJmp(const bytefile *bf, char * &ip, aint addr, bool isNz) {
@@ -460,7 +481,7 @@ inline void execArray(int n) {
 }
 
 inline void execFail(int l, int c) {
-    failure("Failed at %d %d", l, c);
+    state.fail("Failed at %d %d", l, c);
 }
 
 inline void execLine(int) {
@@ -500,7 +521,7 @@ inline void execPatt(int patt) {
             break;
         }
         default:
-            failure("Unexpected pattern %s", patt);
+            state.fail("Unexpected pattern %s", patt);
     }
 }
 
@@ -530,7 +551,7 @@ inline void execBarray(int n) {
     vstack_push((aint) Barray(args, BOX(n)));
 }
 
-inline void execClosure(int nargs, aint* args) {
+inline void execClosure(int nargs, aint *args) {
     vstack_push((aint) Bclosure(args, BOX(nargs)));
 }
 
@@ -565,12 +586,13 @@ inline void execCallC(const bytefile *bf, char * &ip, int nargs) {
 }
 
 void interpret(bytefile *bf) {
-    char *ip = bf->entrypoint_ptr;
+    state = {bf, bf->entrypoint_ptr};
     void (*lds[3])(bytefile *, const Loc &) = {execLd, execLda, execSt};
     do {
-        char opcode = readByte(bf, ip),
+        char opcode = readByte(bf, state.ip),
                 h = (opcode & 0xF0) >> 4, // NOLINT(cppcoreguidelines-narrowing-conversions)
                 l = opcode & 0x0F; // NOLINT(cppcoreguidelines-narrowing-conversions)
+        state.opcode = opcode;
 
         DEBUG("0x%.8lx:\t", ip - bf->code_ptr - 1);
 
@@ -586,22 +608,22 @@ void interpret(bytefile *bf) {
             case 1:
                 switch (l) {
                     case 0: {
-                        auto cnst = readInt(bf, ip);
+                        auto cnst = readInt(bf, state.ip);
                         DEBUG("CONST\t%d", cnst);
                         execConst(cnst);
                         break;
                     }
 
                     case 1: {
-                        auto str = readString(bf, ip);
+                        auto str = readString(bf, state.ip);
                         DEBUG("STRING\t%s", str);
                         execString(str);
                         break;
                     }
 
                     case 2: {
-                        auto str = readString(bf, ip);
-                        auto i = readInt(bf, ip);
+                        auto str = readString(bf, state.ip);
+                        auto i = readInt(bf, state.ip);
                         DEBUG("SEXP\t%s ", str);
                         DEBUG("%d", i);
                         execSexp(str, i);
@@ -621,21 +643,21 @@ void interpret(bytefile *bf) {
                     }
 
                     case 5: {
-                        auto addr = readInt(bf, ip);
+                        auto addr = readInt(bf, state.ip);
                         DEBUG("JMP\t0x%.8x", addr);
-                        ip = bf->code_ptr + addr;
+                        state.ip = bf->code_ptr + addr;
                         break;
                     }
 
                     case 6: {
                         DEBUG("END%s", "");
-                        execEnd(bf, ip);
-                        if (ip == bf->code_ptr + bf->size) return;
+                        execEnd(bf, state.ip);
+                        if (state.ip == bf->code_ptr + bf->size) return;
                         break;
                     }
 
                     case 7: {
-                        DEBUG("RET%s" ,"");
+                        DEBUG("RET%s", "");
                         execRet();
                         break;
                     }
@@ -665,7 +687,7 @@ void interpret(bytefile *bf) {
                     }
 
                     default:
-                        failure("unexpected opcode %d %d", h, l);
+                        state.fail("unexpected opcode %d %d", h, l);
                 }
                 break;
 
@@ -673,7 +695,7 @@ void interpret(bytefile *bf) {
             case 3:
             case 4: {
                 DEBUG("lds %d\t", h - 2);
-                auto loc = readLoc(bf, ip, l);
+                auto loc = readLoc(bf, state.ip, l);
                 DEBUG("loc %d val %d", loc.type, loc.value);
                 lds[h - 2](bf, loc);
 
@@ -684,16 +706,16 @@ void interpret(bytefile *bf) {
                 switch (l) {
                     case 0:
                     case 1: {
-                        auto i = readInt(bf, ip);
+                        auto i = readInt(bf, state.ip);
                         DEBUG("CJMP%d\t0x%.8x", l, i);
-                        execCJmp(bf, ip, i, l == 1); // 0 - z, 1 -- nz
+                        execCJmp(bf, state.ip, i, l == 1); // 0 - z, 1 -- nz
                         break;
                     }
 
                     case 3:
                     case 2: {
-                        auto nargs = readInt(bf, ip);
-                        auto nlocals = readInt(bf, ip);
+                        auto nargs = readInt(bf, state.ip);
+                        auto nlocals = readInt(bf, state.ip);
                         DEBUG("BEGIN\t%d ", nargs);
                         DEBUG("%d", nlocals);
                         execBegin(nargs, nlocals);
@@ -701,13 +723,13 @@ void interpret(bytefile *bf) {
                     }
 
                     case 4: {
-                        auto addr = readInt(bf, ip);
-                        auto nLocs = readInt(bf, ip);
+                        auto addr = readInt(bf, state.ip);
+                        auto nLocs = readInt(bf, state.ip);
                         DEBUG("CLOSURE\t0x%.8x\t%d", addr, nLocs);
                         aint args[nLocs + 1];
                         for (int i = 0; i < nLocs; i++) {
-                            char locType = readByte(bf, ip);
-                            auto loc = readLoc(bf, ip, locType);
+                            char locType = readByte(bf, state.ip);
+                            auto loc = readLoc(bf, state.ip, locType);
                             args[i + 1] = load(bf, loc);
                         }
                         args[0] = addr;
@@ -716,24 +738,24 @@ void interpret(bytefile *bf) {
                     }
 
                     case 5: {
-                        auto nargs = readInt(bf, ip);
+                        auto nargs = readInt(bf, state.ip);
                         DEBUG("CALLC\t%d", nargs);
-                        execCallC(bf, ip, nargs);
+                        execCallC(bf, state.ip, nargs);
                         break;
                     }
 
                     case 6: {
-                        auto addr = readInt(bf, ip);
-                        auto nargs = readInt(bf, ip);
+                        auto addr = readInt(bf, state.ip);
+                        auto nargs = readInt(bf, state.ip);
                         DEBUG("CALL\t0x%.8x ", addr);
                         DEBUG("%d", nargs);
-                        execCall(bf, ip, addr, nargs);
+                        execCall(bf, state.ip, addr, nargs);
                         break;
                     }
 
                     case 7: {
-                        auto tag = readString(bf, ip);
-                        auto len = readInt(bf, ip);
+                        auto tag = readString(bf, state.ip);
+                        auto len = readInt(bf, state.ip);
                         DEBUG("TAG\t%s ", tag);
                         DEBUG("%d", len);
                         execTag(tag, len);
@@ -741,15 +763,15 @@ void interpret(bytefile *bf) {
                     }
 
                     case 8: {
-                        auto i = readInt(bf, ip);
+                        auto i = readInt(bf, state.ip);
                         DEBUG("ARRAY\t%d", i);
                         execArray(i);
                         break;
                     }
 
                     case 9: {
-                        auto ln = readInt(bf, ip);
-                        auto cl = readInt(bf, ip);
+                        auto ln = readInt(bf, state.ip);
+                        auto cl = readInt(bf, state.ip);
                         DEBUG("FAIL\t%d", ln);
                         DEBUG("%d", cl);
                         execFail(ln, cl);
@@ -757,14 +779,14 @@ void interpret(bytefile *bf) {
                     }
 
                     case 10: {
-                        auto i = readInt(bf, ip);
+                        auto i = readInt(bf, state.ip);
                         DEBUG("LINE\t%d", i);
                         execLine(i);
                         break;
                     }
 
                     default:
-                        failure("unexpected opcode 5");
+                        state.fail("unexpected opcode 5");
                 }
                 break;
 
@@ -801,22 +823,22 @@ void interpret(bytefile *bf) {
                     }
 
                     case 4: {
-                        auto n = readInt(bf, ip);
+                        auto n = readInt(bf, state.ip);
                         DEBUG("CALL\tBarray\t%d", n);
                         execBarray(n);
                         break;
                     }
 
                     default:
-                        failure("unexpected opcode 7");
+                        state.fail("unexpected opcode 7");
                 }
             }
             break;
 
             default:
-                failure("unexpected opcode default");
+                state.fail("unexpected opcode default");
         }
-    DEBUG("\n%s", "")
+        DEBUG("\n%s", "")
     } while (true);
 stop:
     DEBUG("<end>%s\n", "");
