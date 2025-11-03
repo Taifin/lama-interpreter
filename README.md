@@ -14,10 +14,18 @@ The `DEBUG` compile definition enables extra logs, namely the commands being int
 
 ## Tests 
 
-To run tests, execute the `run-tests.sh` script. The test suite contains all tests available in the main Lama repository 
+To run tests, execute the `run_tests.sh` script. The test suite contains all tests available in the main Lama repository 
 at version 1.30, except `test054, test110, test111, test803` as the bytecode compiler is unable to process them. 
 
 The directory structure was changed a bit to simplify testing. 
+
+All the tests from the present suite are passing:
+```
+# ./run_tests.sh
+# ...
+Total tests: 11031
+Passed: 11031
+```
 
 ### Performance
 
@@ -27,3 +35,14 @@ it now prints the sorted array.
 To run the performance tests, execute the `performance_test.sh` script. It will run `lamac -i`, `lamac -s` and the bytecode
 interpreter against the sort test. 
 
+Reference performance results:
+```
+# ./performance_test.sh
+Run lamac -i
+Run lamac -s
+Run bytecode interpreter
+Timings (seconds):
+lamac -i: 526.486181000
+lamac -s: 159.162314000
+lama_interpreter (bytecode): 153.401944000
+```
