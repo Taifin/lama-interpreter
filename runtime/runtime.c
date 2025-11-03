@@ -1261,7 +1261,12 @@ extern aint Lread () {
   // int result = BOX(0);
   aint result = BOX(0);
 
+// for some reason, the first whitespace is expected always, but is not printed on osx
+#ifdef TARGET_OS_OSX
+  printf(" > ");
+#else
   printf("> ");
+#endif
   fflush(stdout);
   scanf("%" SCNdAI, &result);
 
