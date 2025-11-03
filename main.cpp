@@ -565,7 +565,7 @@ inline void execCallC(const bytefile *bf, char * &ip, int nargs) {
 }
 
 void interpret(bytefile *bf) {
-    char *ip = bf->code_ptr;
+    char *ip = bf->entrypoint_ptr;
     void (*lds[3])(bytefile *, const Loc &) = {execLd, execLda, execSt};
     do {
         char opcode = readByte(bf, ip),
