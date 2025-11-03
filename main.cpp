@@ -49,7 +49,7 @@ struct State {
 
 State state;
 
-inline void verify_vstack(aint *location, const std::string &trace) {
+static inline void verify_vstack(aint *location, const std::string &trace) {
     if (location >= __gc_stack_bottom) {
         state.fail("Virtual stack underflow! .loc: %.8x, .bot: %.8x, trace: %s", location, __gc_stack_bottom,
                    trace.c_str());
@@ -59,7 +59,7 @@ inline void verify_vstack(aint *location, const std::string &trace) {
     }
 }
 
-inline void verify_cstack(aint *location, const std::string &trace) {
+static inline void verify_cstack(aint *location, const std::string &trace) {
     if (location >= cstack_bottom) {
         state.fail("Call stack underflow! .loc: %.8x, .bot: %.8x, trace: %s", location, cstack_bottom, trace.c_str());
     }
@@ -68,7 +68,7 @@ inline void verify_cstack(aint *location, const std::string &trace) {
     }
 }
 
-inline aint vstack_pop() {
+static inline aint vstack_pop() {
     if (__gc_stack_top >= __gc_stack_bottom) {
         state.fail("Virtual stack underflow!");
     }
@@ -76,7 +76,7 @@ inline aint vstack_pop() {
     return *(SP - 1);
 }
 
-inline void vstack_push(aint val) {
+static inline void vstack_push(aint val) {
     if (vstack >= __gc_stack_top) {
         state.fail("Virtual stack overflow!");
     }
@@ -84,7 +84,7 @@ inline void vstack_push(aint val) {
     *SP = val;
 }
 
-inline void init_vstack(const bytefile *bf) {
+static inline void init_vstack(const bytefile *bf) {
     DEBUG("Init vstack %s\n", "")
     __gc_stack_bottom = vstack + VSTACK_SIZE;
     __gc_stack_top = __gc_stack_bottom;
@@ -97,51 +97,51 @@ inline void init_vstack(const bytefile *bf) {
     vstack_push(0); // argc argv
 }
 
-inline void verify_cstack_underflow(int loc = 0, const char *msg = "Call stack underflow!") {
+static inline void verify_cstack_underflow(int loc = 0, const char *msg = "Call stack underflow!") {
     if (cstack_top + loc >= cstack_bottom) {
         state.fail(msg);
     }
 }
 
-inline void cstack_push(aint val) {
+static inline void cstack_push(aint val) {
     if (cstack_top <= cstack) {
         state.fail("Call stack overflow!");
     }
     *--cstack_top = val;
 }
 
-inline aint cstack_pop() {
+static inline aint cstack_pop() {
     verify_cstack_underflow();
     return *cstack_top++;
 }
 
-inline bool is_closure() {
+static inline bool is_closure() {
     verify_cstack_underflow(4, "Invalid call stack: expected closure flag");
     return (bool) *(cstack_top + 4);
 }
 
-inline aint ret_addr() {
+static inline aint ret_addr() {
     verify_cstack_underflow(3, "Invalid call stack: expected return address");
     return *(cstack_top + 3);
 }
 
-inline aint *frame_pointer() {
+static inline aint *frame_pointer() {
     verify_cstack_underflow(2, "Invalid call stack: expected frame pointer");
     return (aint *) *(cstack_top + 2);
 }
 
-inline aint nargs() {
+static inline aint nargs() {
     verify_cstack_underflow(1, "Invalid call stack: expected number of args");
     return *(cstack_top + 1);
 }
 
-inline aint nlocals() {
+static inline aint nlocals() {
     verify_cstack_underflow(0, "Invalid call stack: expected number of locals");
     return *cstack_top;
 }
 
 
-inline aint *global(bytefile *bf, int ind) {
+static inline aint *global(bytefile *bf, int ind) {
     if (ind < 0 || ind >= bf->global_area_size) {
         state.fail("Requested global %d is out of bounds for [0, %d)", ind, bf->global_area_size);
     }
@@ -151,7 +151,7 @@ inline aint *global(bytefile *bf, int ind) {
     return loc;
 }
 
-inline aint *arg(int ind) {
+static inline aint *arg(int ind) {
     if (ind < 0 || ind >= nargs()) {
         state.fail("Requested argument %d is out of bounds for [0, %d)", ind, nargs());
     }
@@ -161,7 +161,7 @@ inline aint *arg(int ind) {
     return loc;
 }
 
-inline aint *local(int ind) {
+static inline aint *local(int ind) {
     auto nlcls = nlocals();
     if (ind < 0 || ind >= nlocals()) {
         state.fail("Requested local %d is out of bounds for [0, %d)", ind, nlocals());
@@ -172,7 +172,7 @@ inline aint *local(int ind) {
     return loc;
 }
 
-inline aint *closure_loc() {
+static inline aint *closure_loc() {
     if (!is_closure()) {
         state.fail("Requested closure, but closure is not placed on stack");
     }
@@ -182,7 +182,7 @@ inline aint *closure_loc() {
     return loc;
 }
 
-inline aint *closure(int ind) {
+static inline aint *closure(int ind) {
     auto closureLoc = closure_loc();
     auto closureData = TO_DATA(*closureLoc);
 
@@ -206,14 +206,14 @@ struct Loc {
     int value;
 };
 
-inline char readByte(const bytefile *f, char * &ip) {
+static inline char readByte(const bytefile *f, char * &ip) {
     if (ip + 1 < f->code_ptr || ip + 1 >= f->code_ptr + f->size) {
         state.fail("Instruction pointer %.8x out of bounds [%.8x, %.8x)", ip, f->code_ptr, f->code_ptr + f->size);
     }
     return *ip++;
 }
 
-inline int readInt(const bytefile *f, char * &ip) {
+static inline int readInt(const bytefile *f, char * &ip) {
     ip += sizeof(int);
     if (ip < f->code_ptr || ip >= f->code_ptr + f->size) {
         state.fail("Instruction pointer %.8x out of bounds [%.8x, %.8x)", ip, f->code_ptr, f->code_ptr + f->size);
@@ -221,7 +221,7 @@ inline int readInt(const bytefile *f, char * &ip) {
     return *reinterpret_cast<int *>(ip - sizeof(int));
 }
 
-inline char *readString(const bytefile *f, char * &ip) {
+static inline char *readString(const bytefile *f, char * &ip) {
     int pos = readInt(f, ip);
     if (pos < 0 || pos > f->stringtab_size) {
         state.fail("Requested string %d is out of bounds for [0, %d)", pos, f->stringtab_size);
@@ -230,7 +230,7 @@ inline char *readString(const bytefile *f, char * &ip) {
 }
 
 // ReSharper disable once CppNotAllPathsReturnValue
-inline Loc readLoc(const bytefile *f, char * &ip, char byte) {
+static inline Loc readLoc(const bytefile *f, char * &ip, char byte) {
     int val = readInt(f, ip);
     switch (byte) {
         case 0:
@@ -271,7 +271,7 @@ enum class BinOp {
     OR
 };
 
-inline void execBinop(const BinOp &op) {
+static inline void execBinop(const BinOp &op) {
     switch (op) {
         case BinOp::PLUS: BINOP(+)
         case BinOp::MINUS: BINOP(-)
@@ -289,15 +289,15 @@ inline void execBinop(const BinOp &op) {
     }
 }
 
-inline void execConst(int cnst) {
+static inline void execConst(int cnst) {
     vstack_push(BOX(cnst));
 }
 
-inline void execString(char *string) {
+static inline void execString(char *string) {
     vstack_push((aint) Bstring((aint *) &string));
 }
 
-inline void execSexp(char *tag, int nargs) {
+static inline void execSexp(char *tag, int nargs) {
     if (nargs < 0) {
         state.fail("Invalid SEXP op: negative length %d", nargs);
     }
@@ -311,11 +311,11 @@ inline void execSexp(char *tag, int nargs) {
     vstack_push(result);
 }
 
-inline void execSti() {
+static inline void execSti() {
     state.fail("Unsupported instruction STI");
 }
 
-inline void execSta() {
+static inline void execSta() {
     auto val = vstack_pop();
     auto ind = vstack_pop();
     auto dst = vstack_pop();
@@ -325,7 +325,7 @@ inline void execSta() {
     vstack_push((aint) result);
 }
 
-inline void execSt(bytefile *bf, const Loc &loc) {
+static inline void execSt(bytefile *bf, const Loc &loc) {
     auto value = vstack_pop();
     switch (loc.type) {
         case Loc::Type::G: {
@@ -348,17 +348,17 @@ inline void execSt(bytefile *bf, const Loc &loc) {
     vstack_push(value);
 }
 
-inline void execDrop() {
+static inline void execDrop() {
     vstack_pop();
 }
 
-inline void execDup() {
+static inline void execDup() {
     auto val = vstack_pop();
     vstack_push(val);
     vstack_push(val);
 }
 
-inline void execSwap() {
+static inline void execSwap() {
     auto x = vstack_pop();
     auto y = vstack_pop();
 
@@ -366,7 +366,7 @@ inline void execSwap() {
     vstack_push(x);
 }
 
-inline void execElem() {
+static inline void execElem() {
     auto ind = vstack_pop();
     auto src = vstack_pop();
 
@@ -375,7 +375,7 @@ inline void execElem() {
     vstack_push((aint) res);
 }
 
-inline aint load(bytefile *bf, const Loc &loc) {
+static inline aint load(bytefile *bf, const Loc &loc) {
     aint value{};
     switch (loc.type) {
         case Loc::Type::G: {
@@ -398,15 +398,15 @@ inline aint load(bytefile *bf, const Loc &loc) {
     return value;
 }
 
-inline void execLd(bytefile *bf, const Loc &loc) {
+static inline void execLd(bytefile *bf, const Loc &loc) {
     vstack_push(load(bf, loc));
 }
 
-inline void execLda(bytefile *, const Loc &) {
+static inline void execLda(bytefile *, const Loc &) {
     state.fail("LDA is not supported");
 }
 
-inline void update_ip(const bytefile *bf, char * &ip, char *newIp) {
+static inline void update_ip(const bytefile *bf, char * &ip, char *newIp) {
     if (newIp < bf->code_ptr || newIp > bf->code_ptr + bf->size) {
         state.fail("Cannot move instruction pointer %.8x to new %.8x, is out of bounds for [%.8x, %.8x]", ip, newIp,
                    bf->code_ptr, bf->code_ptr + bf->size);
@@ -415,7 +415,7 @@ inline void update_ip(const bytefile *bf, char * &ip, char *newIp) {
     ip = newIp;
 }
 
-inline void execEnd(const bytefile *bf, char * &ip) {
+static inline void execEnd(const bytefile *bf, char * &ip) {
     aint retval = 0;
     bool isRetval = false;
     if (SP < frame_pointer() + nlocals()) {
@@ -437,11 +437,11 @@ inline void execEnd(const bytefile *bf, char * &ip) {
     cstack_top += 5;
 }
 
-inline void execRet() {
+static inline void execRet() {
     state.fail("RET is not supported");
 }
 
-inline void execCJmp(const bytefile *bf, char * &ip, aint addr, bool isNz) {
+static inline void execCJmp(const bytefile *bf, char * &ip, aint addr, bool isNz) {
     auto val = UNBOX(vstack_pop());
     aint target{};
     if (isNz) {
@@ -461,7 +461,7 @@ inline void execCJmp(const bytefile *bf, char * &ip, aint addr, bool isNz) {
     update_ip(bf, ip, bf->code_ptr + target);
 }
 
-inline void execBegin(int n_args, int n_locals) {
+static inline void execBegin(int n_args, int n_locals) {
     cstack_push((aint) SP);
     cstack_push(n_args);
     cstack_push(n_locals);
@@ -470,24 +470,24 @@ inline void execBegin(int n_args, int n_locals) {
     }
 }
 
-inline void execTag(char *tag, int len) {
+static inline void execTag(char *tag, int len) {
     auto dest = vstack_pop();
     vstack_push(Btag((void *) dest, LtagHash(tag), BOX(len)));
 }
 
-inline void execArray(int n) {
+static inline void execArray(int n) {
     auto dest = vstack_pop();
     vstack_push(Barray_patt((void *) dest, BOX(n)));
 }
 
-inline void execFail(int l, int c) {
+static inline void execFail(int l, int c) {
     state.fail("Failed at %d %d", l, c);
 }
 
-inline void execLine(int) {
+static inline void execLine(int) {
 }
 
-inline void execPatt(int patt) {
+static inline void execPatt(int patt) {
     std::string pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
     auto x = (void *) vstack_pop();
     switch (patt) {
@@ -525,25 +525,25 @@ inline void execPatt(int patt) {
     }
 }
 
-inline void execLread() {
+static inline void execLread() {
     vstack_push(Lread());
 }
 
-inline void execLwrite() {
+static inline void execLwrite() {
     auto x = vstack_pop();
     vstack_push(Lwrite(x));
 }
 
-inline void execLlength() {
+static inline void execLlength() {
     auto x = vstack_pop();
     vstack_push(Llength((void *) x));
 }
 
-inline void execLstring() {
+static inline void execLstring() {
     vstack_push((aint) Lstring(SP));
 }
 
-inline void execBarray(int n) {
+static inline void execBarray(int n) {
     aint args[n];
     for (auto i = 0; i < n; i++) {
         args[n - 1 - i] = vstack_pop();
@@ -551,11 +551,11 @@ inline void execBarray(int n) {
     vstack_push((aint) Barray(args, BOX(n)));
 }
 
-inline void execClosure(int nargs, aint *args) {
+static inline void execClosure(int nargs, aint *args) {
     vstack_push((aint) Bclosure(args, BOX(nargs)));
 }
 
-inline void execCall(const bytefile *bf, char * &ip, size_t addr, int nargs) {
+static inline void execCall(const bytefile *bf, char * &ip, size_t addr, int nargs) {
     verify_vstack(SP + nargs, ".call");
 
     cstack_push(false); // not a closure
@@ -564,7 +564,7 @@ inline void execCall(const bytefile *bf, char * &ip, size_t addr, int nargs) {
     update_ip(bf, ip, bf->code_ptr + addr);
 }
 
-inline void execCallC(const bytefile *bf, char * &ip, int nargs) {
+static inline void execCallC(const bytefile *bf, char * &ip, int nargs) {
     /*  stack frame is not yet complete:
      *  bottom
      *  ...
@@ -585,7 +585,7 @@ inline void execCallC(const bytefile *bf, char * &ip, int nargs) {
     update_ip(bf, ip, bf->code_ptr + target);
 }
 
-void interpret(bytefile *bf) {
+static inline void interpret(bytefile *bf) {
     state = {bf, bf->entrypoint_ptr};
     void (*lds[3])(bytefile *, const Loc &) = {execLd, execLda, execSt};
     do {
