@@ -87,7 +87,10 @@ struct State {
                 stderr, "Failure.\n\tinstruction offset: 0x%.8lx\n\topcode: %d\n\tvstack: 0x%.8lx\n\tcstack: 0x%.8lx\n",
                 ip - bf->code_ptr - 1, opcode, __gc_stack_top, cstack_top);
         }
-        failure(s, args);
+
+        fprintf(stderr, "*** FAILURE: ");
+        vfprintf(stderr, s, args);
+        exit(255);
     }
 };
 
@@ -251,16 +254,16 @@ struct Loc {
 };
 
 static inline char readByte(const bytefile *f, char * &ip) {
-    if (ip + 1 < f->code_ptr || ip + 1 >= f->code_ptr + f->size) {
-        state.fail("Instruction pointer %.8x out of bounds [%.8x, %.8x)", ip, f->code_ptr, f->code_ptr + f->size);
+    if (ip + 1 < f->code_ptr || ip + 1 > f->code_ptr + f->code_size) {
+        state.fail("Instruction pointer %.8x out of bounds [%.8x, %.8x)", ip, f->code_ptr, f->code_ptr + f->code_size);
     }
     return *ip++;
 }
 
 static inline int readInt(const bytefile *f, char * &ip) {
     ip += sizeof(int);
-    if (ip < f->code_ptr || ip >= f->code_ptr + f->size) {
-        state.fail("Instruction pointer %.8x out of bounds [%.8x, %.8x)", ip, f->code_ptr, f->code_ptr + f->size);
+    if (ip < f->code_ptr || ip > f->code_ptr + f->code_size) {
+        state.fail("Instruction pointer %.8x out of bounds [%.8x, %.8x)", ip, f->code_ptr, f->code_ptr + f->code_size);
     }
     return *reinterpret_cast<int *>(ip - sizeof(int));
 }
@@ -462,13 +465,13 @@ static inline void execLda(bytefile *, const Loc &) {
     state.fail("LDA is not supported");
 }
 
-static inline void update_ip(const bytefile *bf, char * &ip, char *newIp) {
-    if (newIp < bf->code_ptr || newIp > bf->code_ptr + bf->size) {
-        state.fail("Cannot move instruction pointer %.8x to new %.8x, is out of bounds for [%.8x, %.8x]", ip, newIp,
-                   bf->code_ptr, bf->code_ptr + bf->size);
+static inline void update_ip(const bytefile *bf, char * &ip, aint offset) {
+    if (offset < 0 || offset > bf->code_size) {
+        state.fail("Cannot move instruction pointer %.8x by offset %d, is out of bounds for [%.8x, %.8x] (%d)", ip, offset,
+                   bf->code_ptr, bf->code_ptr + bf->code_size, bf->code_size);
     }
 
-    ip = newIp;
+    ip = bf->code_ptr + offset;
 }
 
 static inline void execEnd(const bytefile *bf, char * &ip) {
@@ -487,7 +490,7 @@ static inline void execEnd(const bytefile *bf, char * &ip) {
         vstack_push(retval);
     }
 
-    update_ip(bf, ip, (char *) ret_addr());
+    update_ip(bf, ip, ret_addr());
 
     verify_cstack(cstack_top + 4, ".end"); // same
     cstack_top += 5;
@@ -499,7 +502,7 @@ static inline void execRet() {
 
 static inline void execCJmp(const bytefile *bf, char * &ip, aint addr, bool isNz) {
     if (auto val = UNBOX(vstack_pop()); isNz != !val) {
-        update_ip(bf, ip, bf->code_ptr + addr);
+        update_ip(bf, ip, addr);
     }
 }
 
@@ -603,9 +606,9 @@ static inline void execCall(const bytefile *bf, char * &ip, size_t addr, int nar
     verify_vstack(SP + nargs, ".call");
 
     cstack_push(false); // not a closure
-    cstack_push((aint) ip);
+    cstack_push(ip - bf->code_ptr);
 
-    update_ip(bf, ip, bf->code_ptr + addr);
+    update_ip(bf, ip, (aint)addr);
 }
 
 static inline void execCallC(const bytefile *bf, char * &ip, int nargs) {
@@ -624,9 +627,9 @@ static inline void execCallC(const bytefile *bf, char * &ip, int nargs) {
 
     auto target = ((aint *) *closureLoc)[0];
     cstack_push(true); // closure
-    cstack_push((aint) ip);
+    cstack_push(ip - bf->code_ptr);
 
-    update_ip(bf, ip, bf->code_ptr + target);
+    update_ip(bf, ip, target);
 }
 
 static inline void interpret(bytefile *bf) {
@@ -697,7 +700,7 @@ static inline void interpret(bytefile *bf) {
                     case Instruction::END: {
                         DEBUG("END%s", "");
                         execEnd(bf, state.ip);
-                        if (state.ip == bf->code_ptr + bf->size) return;
+                        if (state.ip == bf->code_ptr + bf->code_size) return;
                         break;
                     }
 
@@ -905,7 +908,7 @@ int main(const int argc, char **argv) {
     __gc_init();
     init_vstack(bf);
     cstack_push(false);
-    cstack_push((aint) (bf->code_ptr + bf->size));
+    cstack_push((aint) (bf->code_size));
 
     interpret(bf);
 
