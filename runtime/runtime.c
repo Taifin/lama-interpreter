@@ -805,7 +805,7 @@ extern void *Bclosure (aint* args, const aint bn) {
   ((void **)r->contents)[0] = (void*) args[0];
 
   for (int i = 0; i < n; i++) {
-    ((aint *)r->contents)[i + 1] = args[i + 1];
+    ((aint *)r->contents)[n - i] = args[i + 1];
   }
 
   for (aint i = n - 1; i >= 0; --i) {
@@ -830,7 +830,7 @@ extern void *Barray (aint* args, const aint bn) {
   r = (data *)alloc_array(n);
 
   for (int i = 0; i < n; i++) {
-    ((aint *)r->contents)[i] = args[i];
+    ((aint *)r->contents)[n - i - 1] = args[i];
   }
 
   for (aint i = n - 1; i >= 0; --i) {

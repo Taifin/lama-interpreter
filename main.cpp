@@ -18,21 +18,21 @@ FILE *debugFile = stderr;
 ;
 #endif
 
-constexpr int VSTACK_SIZE = 1 << 20;
-constexpr int CSTACK_SIZE = 1 << 20;
+constexpr static int VSTACK_SIZE = 1 << 20;
+constexpr static int CSTACK_SIZE = 1 << 20;
 
-aint vstack[VSTACK_SIZE];
-aint cstack[CSTACK_SIZE];
+static aint vstack[VSTACK_SIZE];
+static aint cstack[CSTACK_SIZE];
 
-aint *cstack_top = cstack + CSTACK_SIZE;
-aint *cstack_bottom = cstack + CSTACK_SIZE;
+static aint *cstack_top = cstack + CSTACK_SIZE;
+static aint *cstack_bottom = cstack + CSTACK_SIZE;
 
 #define SP (__gc_stack_top + 1)
 
 struct State {
     bytefile *bf = nullptr;
     char *ip = nullptr;
-    char opcode = -1;
+    unsigned char opcode = -1;
 
     void fail(const char *s, ...) const {
         va_list args;
@@ -230,7 +230,7 @@ static inline char *readString(const bytefile *f, char * &ip) {
 }
 
 // ReSharper disable once CppNotAllPathsReturnValue
-static inline Loc readLoc(const bytefile *f, char * &ip, char byte) {
+static inline Loc readLoc(const bytefile *f, char * &ip, unsigned char byte) {
     int val = readInt(f, ip);
     switch (byte) {
         case 0:
@@ -255,6 +255,18 @@ static inline Loc readLoc(const bytefile *f, char * &ip, char byte) {
         break;                          \
     }
 
+#define BINOP_DIV(op)                                                                           \
+    {                                                                                           \
+        auto rhs = UNBOX(vstack_pop());                                                         \
+        auto lhs = UNBOX(vstack_pop());                                                         \
+        if (rhs == 0) {                                                                         \
+            state.fail("Attempt to divide %d by zero when executing operation %s", lhs, #op);   \
+        }                                                                                       \
+        auto v = lhs op rhs;                                                                    \
+        vstack_push(BOX(v));                                                                    \
+        break;                                                                                  \
+    }
+
 enum class BinOp {
     PLUS,
     MINUS,
@@ -276,8 +288,8 @@ static inline void execBinop(const BinOp &op) {
         case BinOp::PLUS: BINOP(+)
         case BinOp::MINUS: BINOP(-)
         case BinOp::TIMES: BINOP(*)
-        case BinOp::DIV: BINOP(/)
-        case BinOp::MOD: BINOP(%)
+        case BinOp::DIV: BINOP_DIV(/)
+        case BinOp::MOD: BINOP_DIV(%)
         case BinOp::LT: BINOP(<)
         case BinOp::LTQ: BINOP(<=)
         case BinOp::GT: BINOP(>)
@@ -442,23 +454,9 @@ static inline void execRet() {
 }
 
 static inline void execCJmp(const bytefile *bf, char * &ip, aint addr, bool isNz) {
-    auto val = UNBOX(vstack_pop());
-    aint target{};
-    if (isNz) {
-        if (val != 0) {
-            target = addr;
-        } else {
-            return;
-        }
-    } else {
-        if (val == 0) {
-            target = addr;
-        } else {
-            return;
-        }
+    if (auto val = UNBOX(vstack_pop()); isNz != !val) {
+        update_ip(bf, ip, bf->code_ptr + addr);
     }
-
-    update_ip(bf, ip, bf->code_ptr + target);
 }
 
 static inline void execBegin(int n_args, int n_locals) {
@@ -544,15 +542,17 @@ static inline void execLstring() {
 }
 
 static inline void execBarray(int n) {
-    aint args[n];
-    for (auto i = 0; i < n; i++) {
-        args[n - 1 - i] = vstack_pop();
-    }
-    vstack_push((aint) Barray(args, BOX(n)));
+    verify_vstack(SP + n, ".barray");
+    auto arrayPtr = (aint) Barray(SP, BOX(n));
+    __gc_stack_top += n;
+    vstack_push(arrayPtr);
 }
 
-static inline void execClosure(int nargs, aint *args) {
-    vstack_push((aint) Bclosure(args, BOX(nargs)));
+static inline void execClosure(int nargs, int addr) {
+    vstack_push(addr);
+    auto *closurePtr = Bclosure(SP, BOX(nargs));
+    __gc_stack_top += nargs + 1;
+    vstack_push((aint)closurePtr);
 }
 
 static inline void execCall(const bytefile *bf, char * &ip, size_t addr, int nargs) {
@@ -587,14 +587,14 @@ static inline void execCallC(const bytefile *bf, char * &ip, int nargs) {
 
 static inline void interpret(bytefile *bf) {
     state = {bf, bf->entrypoint_ptr};
-    void (*lds[3])(bytefile *, const Loc &) = {execLd, execLda, execSt};
+    static void (*const lds[3])(bytefile *, const Loc &) = {execLd, execLda, execSt};
     do {
-        char opcode = readByte(bf, state.ip),
+        unsigned char opcode = readByte(bf, state.ip),
                 h = (opcode & 0xF0) >> 4, // NOLINT(cppcoreguidelines-narrowing-conversions)
                 l = opcode & 0x0F; // NOLINT(cppcoreguidelines-narrowing-conversions)
         state.opcode = opcode;
 
-        DEBUG("0x%.8lx:\t", ip - bf->code_ptr - 1);
+        DEBUG("0x%.8lx:\t", state.ip - bf->code_ptr - 1);
 
         switch (h) {
             case 15:
@@ -726,14 +726,12 @@ static inline void interpret(bytefile *bf) {
                         auto addr = readInt(bf, state.ip);
                         auto nLocs = readInt(bf, state.ip);
                         DEBUG("CLOSURE\t0x%.8x\t%d", addr, nLocs);
-                        aint args[nLocs + 1];
                         for (int i = 0; i < nLocs; i++) {
                             char locType = readByte(bf, state.ip);
                             auto loc = readLoc(bf, state.ip, locType);
-                            args[i + 1] = load(bf, loc);
+                            vstack_push(load(bf, loc));
                         }
-                        args[0] = addr;
-                        execClosure(nLocs, args);
+                        execClosure(nLocs, addr);
                         break;
                     }
 
