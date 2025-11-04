@@ -18,6 +18,50 @@ FILE *debugFile = stderr;
 ;
 #endif
 
+enum class Instruction {
+    BINOP = 0,
+    CONST_H = 1,
+    LD = 2,
+    LDA = 3,
+    ST = 4,
+    CJMP_H = 5,
+    PATT_H = 6,
+    CALL_BUILTIN = 7,
+    STOP = 15,
+
+    CONST = 0,
+    STRING = 1,
+    SEXP = 2,
+    STI = 3,
+    STA = 4,
+    JMP = 5,
+    END = 6,
+    RET = 7,
+    DROP = 8,
+    DUP = 9,
+    SWAP = 10,
+    ELEM = 11,
+
+    CJMPZ = 0,
+    CJMPNZ = 1,
+    BEGIN = 2,
+    CBEGIN = 3,
+    CLOSURE = 4,
+    CALLC = 5,
+    CALL = 6,
+    TAG = 7,
+    ARRAY = 8,
+    FAIL = 9,
+    LINE = 10,
+
+    LREAD = 0,
+    LWRITE = 1,
+    LLENGTH = 2,
+    LSTRING = 3,
+    BARRAY = 4,
+
+};
+
 constexpr static int VSTACK_SIZE = 1 << 20;
 constexpr static int CSTACK_SIZE = 1 << 20;
 
@@ -587,7 +631,6 @@ static inline void execCallC(const bytefile *bf, char * &ip, int nargs) {
 
 static inline void interpret(bytefile *bf) {
     state = {bf, bf->entrypoint_ptr};
-    static void (*const lds[3])(bytefile *, const Loc &) = {execLd, execLda, execSt};
     do {
         unsigned char opcode = readByte(bf, state.ip),
                 h = (opcode & 0xF0) >> 4, // NOLINT(cppcoreguidelines-narrowing-conversions)
@@ -596,32 +639,34 @@ static inline void interpret(bytefile *bf) {
 
         DEBUG("0x%.8lx:\t", state.ip - bf->code_ptr - 1);
 
-        switch (h) {
-            case 15:
+        auto hi = static_cast<Instruction>(h), li = static_cast<Instruction>(l);
+
+        switch (hi) {
+            case Instruction::STOP:
                 goto stop;
 
-            case 0:
+            case Instruction::BINOP:
                 DEBUG("BINOP\t%d", l);
                 execBinop(static_cast<BinOp>(l - 1));
                 break;
 
-            case 1:
-                switch (l) {
-                    case 0: {
+            case Instruction::CONST_H:
+                switch (li) {
+                    case Instruction::CONST: {
                         auto cnst = readInt(bf, state.ip);
                         DEBUG("CONST\t%d", cnst);
                         execConst(cnst);
                         break;
                     }
 
-                    case 1: {
+                    case Instruction::STRING: {
                         auto str = readString(bf, state.ip);
                         DEBUG("STRING\t%s", str);
                         execString(str);
                         break;
                     }
 
-                    case 2: {
+                    case Instruction::SEXP: {
                         auto str = readString(bf, state.ip);
                         auto i = readInt(bf, state.ip);
                         DEBUG("SEXP\t%s ", str);
@@ -630,57 +675,57 @@ static inline void interpret(bytefile *bf) {
                         break;
                     }
 
-                    case 3: {
+                    case Instruction::STI: {
                         DEBUG("STI%s", "");
                         execSti();
                         break;
                     }
 
-                    case 4: {
+                    case Instruction::STA: {
                         DEBUG("STA%s", "");
                         execSta();
                         break;
                     }
 
-                    case 5: {
+                    case Instruction::JMP: {
                         auto addr = readInt(bf, state.ip);
                         DEBUG("JMP\t0x%.8x", addr);
                         state.ip = bf->code_ptr + addr;
                         break;
                     }
 
-                    case 6: {
+                    case Instruction::END: {
                         DEBUG("END%s", "");
                         execEnd(bf, state.ip);
                         if (state.ip == bf->code_ptr + bf->size) return;
                         break;
                     }
 
-                    case 7: {
+                    case Instruction::RET: {
                         DEBUG("RET%s", "");
                         execRet();
                         break;
                     }
 
-                    case 8: {
+                    case Instruction::DROP: {
                         DEBUG("DROP%s", "");
                         execDrop();
                         break;
                     }
 
-                    case 9: {
+                    case Instruction::DUP: {
                         DEBUG("DUP%s", "");
                         execDup();
                         break;
                     }
 
-                    case 10: {
+                    case Instruction::SWAP: {
                         DEBUG("SWAP%s", "");
                         execSwap();
                         break;
                     }
 
-                    case 11: {
+                    case Instruction::ELEM: {
                         DEBUG("ELEM%s", "");
                         execElem();
                         break;
@@ -691,29 +736,37 @@ static inline void interpret(bytefile *bf) {
                 }
                 break;
 
-            case 2:
-            case 3:
-            case 4: {
-                DEBUG("lds %d\t", h - 2);
+            case Instruction::LD: {
                 auto loc = readLoc(bf, state.ip, l);
-                DEBUG("loc %d val %d", loc.type, loc.value);
-                lds[h - 2](bf, loc);
-
+                DEBUG("LD loc %d val %d", loc.type, loc.value);
+                execLd(bf, loc);
+                break;
+            }
+            case Instruction::LDA: {
+                auto loc = readLoc(bf, state.ip, l);
+                DEBUG("LDA loc %d val %d", loc.type, loc.value);
+                execLda(bf, loc);
+                break;
+            }
+            case Instruction::ST: {
+                auto loc = readLoc(bf, state.ip, l);
+                DEBUG("ST loc %d val %d", loc.type, loc.value);
+                execSt(bf, loc);
                 break;
             }
 
-            case 5:
-                switch (l) {
-                    case 0:
-                    case 1: {
+            case Instruction::CJMP_H:
+                switch (li) {
+                    case Instruction::CJMPZ:
+                    case Instruction::CJMPNZ: {
                         auto i = readInt(bf, state.ip);
                         DEBUG("CJMP%d\t0x%.8x", l, i);
                         execCJmp(bf, state.ip, i, l == 1); // 0 - z, 1 -- nz
                         break;
                     }
 
-                    case 3:
-                    case 2: {
+                    case Instruction::BEGIN:
+                    case Instruction::CBEGIN: {
                         auto nargs = readInt(bf, state.ip);
                         auto nlocals = readInt(bf, state.ip);
                         DEBUG("BEGIN\t%d ", nargs);
@@ -722,7 +775,7 @@ static inline void interpret(bytefile *bf) {
                         break;
                     }
 
-                    case 4: {
+                    case Instruction::CLOSURE: {
                         auto addr = readInt(bf, state.ip);
                         auto nLocs = readInt(bf, state.ip);
                         DEBUG("CLOSURE\t0x%.8x\t%d", addr, nLocs);
@@ -735,14 +788,14 @@ static inline void interpret(bytefile *bf) {
                         break;
                     }
 
-                    case 5: {
+                    case Instruction::CALLC: {
                         auto nargs = readInt(bf, state.ip);
                         DEBUG("CALLC\t%d", nargs);
                         execCallC(bf, state.ip, nargs);
                         break;
                     }
 
-                    case 6: {
+                    case Instruction::CALL: {
                         auto addr = readInt(bf, state.ip);
                         auto nargs = readInt(bf, state.ip);
                         DEBUG("CALL\t0x%.8x ", addr);
@@ -751,7 +804,7 @@ static inline void interpret(bytefile *bf) {
                         break;
                     }
 
-                    case 7: {
+                    case Instruction::TAG: {
                         auto tag = readString(bf, state.ip);
                         auto len = readInt(bf, state.ip);
                         DEBUG("TAG\t%s ", tag);
@@ -760,14 +813,14 @@ static inline void interpret(bytefile *bf) {
                         break;
                     }
 
-                    case 8: {
+                    case Instruction::ARRAY: {
                         auto i = readInt(bf, state.ip);
                         DEBUG("ARRAY\t%d", i);
                         execArray(i);
                         break;
                     }
 
-                    case 9: {
+                    case Instruction::FAIL: {
                         auto ln = readInt(bf, state.ip);
                         auto cl = readInt(bf, state.ip);
                         DEBUG("FAIL\t%d", ln);
@@ -776,7 +829,7 @@ static inline void interpret(bytefile *bf) {
                         break;
                     }
 
-                    case 10: {
+                    case Instruction::LINE: {
                         auto i = readInt(bf, state.ip);
                         DEBUG("LINE\t%d", i);
                         execLine(i);
@@ -788,39 +841,39 @@ static inline void interpret(bytefile *bf) {
                 }
                 break;
 
-            case 6: {
+            case Instruction::PATT_H: {
                 DEBUG("PATT\t%d", l);
                 execPatt(l);
                 break;
             }
 
-            case 7: {
-                switch (l) {
-                    case 0: {
+            case Instruction::CALL_BUILTIN: {
+                switch (li) {
+                    case Instruction::LREAD: {
                         DEBUG("CALL\t%s", "Lread");
                         execLread();
                         break;
                     }
 
-                    case 1: {
+                    case Instruction::LWRITE: {
                         DEBUG("CALL\t%s", "Lwrite");
                         execLwrite();
                         break;
                     }
 
-                    case 2: {
+                    case Instruction::LLENGTH: {
                         DEBUG("CALL\t%s", "Llength");
                         execLlength();
                         break;
                     }
 
-                    case 3: {
+                    case Instruction::LSTRING: {
                         DEBUG("CALL\t%s", "Lstring");
                         execLstring();
                         break;
                     }
 
-                    case 4: {
+                    case Instruction::BARRAY: {
                         auto n = readInt(bf, state.ip);
                         DEBUG("CALL\tBarray\t%d", n);
                         execBarray(n);
