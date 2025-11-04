@@ -732,7 +732,7 @@ static inline void interpret(bytefile *bf) {
                     }
 
                     default:
-                        state.fail("unexpected opcode %d %d", h, l);
+                        state.fail("unexpected opcode %d", opcode);
                 }
                 break;
 
@@ -837,7 +837,7 @@ static inline void interpret(bytefile *bf) {
                     }
 
                     default:
-                        state.fail("unexpected opcode 5");
+                        state.fail("unexpected opcode %d", opcode);
                 }
                 break;
 
@@ -881,13 +881,13 @@ static inline void interpret(bytefile *bf) {
                     }
 
                     default:
-                        state.fail("unexpected opcode 7");
+                        state.fail("unexpected opcode %d", opcode);
                 }
             }
             break;
 
             default:
-                state.fail("unexpected opcode default");
+                state.fail("unexpected opcode %d", opcode);
         }
         DEBUG("\n%s", "")
     } while (true);
