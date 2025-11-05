@@ -3,7 +3,7 @@
 #include <string>
 
 struct bytefile {
-    long size;
+    long code_size;
     char *entrypoint_ptr;
     char *string_ptr; /* A pointer to the beginning of the string table */
     int *public_ptr; /* A pointer to the beginning of publics table    */

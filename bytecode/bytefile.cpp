@@ -73,7 +73,7 @@ bytefile *readFile(const std::string &filename) {
     bf->public_ptr = (int *) bf->buffer;
     bf->code_ptr = &bf->string_ptr[bf->stringtab_size];
     bf->global_ptr = (int *) malloc(bf->global_area_size * sizeof(int));
-    bf->size = size - ((long)bf->code_ptr - (long)&bf->stringtab_size);
+    bf->code_size = size - ((long)bf->code_ptr - (long)&bf->stringtab_size);
 
     bf->entrypoint_ptr = nullptr;
     for (int i = 0; i < bf->public_symbols_number; i++) {

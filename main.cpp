@@ -62,6 +62,16 @@ enum class Instruction {
 
 };
 
+enum class Patts {
+    STR = 0,
+    STR_TAG = 1,
+    ARRAY = 2,
+    SEXP = 3,
+    BOXED = 4,
+    UNBOXED = 5,
+    CLOSURE = 6
+};
+
 constexpr static int VSTACK_SIZE = 1 << 20;
 constexpr static int CSTACK_SIZE = 1 << 20;
 
@@ -243,10 +253,10 @@ static inline aint *closure(int ind) {
 
 struct Loc {
     enum class Type {
-        G,
-        L,
-        A,
-        C
+        G = 0,
+        L = 1,
+        A = 2,
+        C = 3
     };
 
     Type type;
@@ -254,17 +264,17 @@ struct Loc {
 };
 
 static inline char readByte(const bytefile *f, char * &ip) {
-    if (ip + 1 < f->code_ptr || ip + 1 > f->code_ptr + f->code_size) {
+    if (ip < f->code_ptr || ip + 1 > f->code_ptr + f->code_size) {
         state.fail("Instruction pointer %.8x out of bounds [%.8x, %.8x)", ip, f->code_ptr, f->code_ptr + f->code_size);
     }
     return *ip++;
 }
 
 static inline int readInt(const bytefile *f, char * &ip) {
-    ip += sizeof(int);
-    if (ip < f->code_ptr || ip > f->code_ptr + f->code_size) {
+    if (ip < f->code_ptr || ip + sizeof(int) > f->code_ptr + f->code_size) {
         state.fail("Instruction pointer %.8x out of bounds [%.8x, %.8x)", ip, f->code_ptr, f->code_ptr + f->code_size);
     }
+    ip += sizeof(int);
     return *reinterpret_cast<int *>(ip - sizeof(int));
 }
 
@@ -279,15 +289,12 @@ static inline char *readString(const bytefile *f, char * &ip) {
 // ReSharper disable once CppNotAllPathsReturnValue
 static inline Loc readLoc(const bytefile *f, char * &ip, unsigned char byte) {
     int val = readInt(f, ip);
-    switch (byte) {
-        case 0:
-            return Loc(Loc::Type::G, val);
-        case 1:
-            return Loc(Loc::Type::L, val);
-        case 2:
-            return Loc(Loc::Type::A, val);
-        case 3:
-            return Loc(Loc::Type::C, val);
+    switch (auto locType = static_cast<Loc::Type>(byte)) {
+        case Loc::Type::G:
+        case Loc::Type::L:
+        case Loc::Type::A:
+        case Loc::Type::C:
+            return Loc(locType, val);
         default:
             state.fail("Unsupported loc type %d", byte);
     }
@@ -533,35 +540,34 @@ static inline void execLine(int) {
 }
 
 static inline void execPatt(int patt) {
-    std::string pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
     auto x = (void *) vstack_pop();
-    switch (patt) {
-        case 0: {
+    switch (static_cast<Patts>(patt)) {
+        case Patts::STR: {
             auto y = (void *) vstack_pop();
             vstack_push(Bstring_patt(x, y));
             break;
         }
-        case 1: {
+        case Patts::STR_TAG: {
             vstack_push(Bstring_tag_patt(x));
             break;
         }
-        case 2: {
+        case Patts::ARRAY: {
             vstack_push(Barray_tag_patt(x));
             break;
         }
-        case 3: {
+        case Patts::SEXP: {
             vstack_push(Bsexp_tag_patt(x));
             break;
         }
-        case 4: {
+        case Patts::BOXED: {
             vstack_push(Bboxed_patt(x));
             break;
         }
-        case 5: {
+        case Patts::UNBOXED: {
             vstack_push(Bunboxed_patt(x));
             break;
         }
-        case 6: {
+        case Patts::CLOSURE: {
             vstack_push(Bclosure_tag_patt(x));
             break;
         }
