@@ -264,14 +264,14 @@ struct Loc {
 };
 
 static inline char readByte(const bytefile *f, char * &ip) {
-    if (ip < f->code_ptr || ip + 1 > f->code_ptr + f->code_size) {
+    if (ip < f->code_ptr || ip + 1 >= f->code_ptr + f->code_size) {
         state.fail("Instruction pointer %.8x out of bounds [%.8x, %.8x)", ip, f->code_ptr, f->code_ptr + f->code_size);
     }
     return *ip++;
 }
 
 static inline int readInt(const bytefile *f, char * &ip) {
-    if (ip < f->code_ptr || ip + sizeof(int) > f->code_ptr + f->code_size) {
+    if (ip < f->code_ptr || ip + sizeof(int) >= f->code_ptr + f->code_size) {
         state.fail("Instruction pointer %.8x out of bounds [%.8x, %.8x)", ip, f->code_ptr, f->code_ptr + f->code_size);
     }
     ip += sizeof(int);
