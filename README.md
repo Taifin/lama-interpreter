@@ -61,7 +61,7 @@ Run
 ./lama_analyzer <input>.bc
 ```
 
-to analyze the frequency of one- and two-bytecode sequences.
+to analyze the frequency of one- and two-bytecode sequences. ([analyzer.cpp](src/analyzer.cpp))
 
 Example output:
 
