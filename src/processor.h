@@ -75,6 +75,43 @@ struct ProcessorState {
     }
 };
 
+struct NoOpProcessor {
+    void processBinop(ProcessorState&, BinOp) {}
+    void processConst(ProcessorState&, int) {}
+    void processString(ProcessorState&, char*) {}
+    void processSexp(ProcessorState&, char*, int) {}
+    void processSti(ProcessorState&) {}
+    void processSta(ProcessorState&) {}
+    void processJmp(ProcessorState&, int) {}
+    void processEnd(ProcessorState&) {}
+    void processRet(ProcessorState&) {}
+    void processDrop(ProcessorState&) {}
+    void processDup(ProcessorState&) {}
+    void processSwap(ProcessorState&) {}
+    void processElem(ProcessorState&) {}
+
+    void processLd(ProcessorState&, const Loc&) {}
+    void processLda(ProcessorState&, const Loc&) {}
+    void processSt(ProcessorState&, const Loc&) {}
+
+    void processCJmp(ProcessorState&, aint, bool) {}
+    void processBegin(ProcessorState&, int, int) {}
+    void processClosure(ProcessorState&, int, int) {}
+    void processCallC(ProcessorState&, int) {}
+    void processCall(ProcessorState&, size_t, int) {}
+    void processTag(ProcessorState&, char*, int) {}
+    void processArray(ProcessorState&, int) {}
+    void processFail(ProcessorState&, int, int) {}
+    void processLine(ProcessorState&, int) {}
+
+    void processPatt(ProcessorState&, int) {}
+
+    void processLread(ProcessorState&) {}
+    void processLwrite(ProcessorState&) {}
+    void processLlength(ProcessorState&) {}
+    void processLstring(ProcessorState&) {}
+    void processBarray(ProcessorState&, int) {}
+};
 
 template<typename Processor>
 void processInstruction(Processor &processor, ProcessorState& state) {
@@ -83,7 +120,7 @@ void processInstruction(Processor &processor, ProcessorState& state) {
             l = opcode & 0x0F; // NOLINT(cppcoreguidelines-narrowing-conversions)
     state.opcode = opcode;
 
-    DEBUG("0x%.8lx:\t", state.ip - bf->code_ptr - 1);
+    DEBUG("0x%.8lx:\t", state.ip - state.bf->code_ptr - 1);
 
     auto hi = static_cast<Instruction>(h), li = static_cast<Instruction>(l);
     switch (hi) {
@@ -292,6 +329,8 @@ void processInstruction(Processor &processor, ProcessorState& state) {
         default:
             state.fail("unexpected opcode %d", opcode);
     }
+
+    DEBUG("%s", "\n");
 }
 
 #endif //VIRTUAL_MACHINES_PROCESSOR_H

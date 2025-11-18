@@ -8,3 +8,5 @@ output/
 *.err
 *.input
 .DS_Store
+
+*/.notes
