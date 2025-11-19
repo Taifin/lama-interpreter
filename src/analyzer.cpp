@@ -11,11 +11,11 @@
 
 struct BytecodeSeq {
     char* begin;
-    char* end;
+    int length;
 };
 
 struct Idiom {
-    BytecodeSeq seq;
+    BytecodeSeq *seq;
     int count;
 };
 
@@ -40,36 +40,39 @@ struct IsJumpProcessor : NoOpProcessor {
 
 struct ReachableProcessor : NoOpProcessor {
     // implicit blocks: the next instruction is always added after any jumps
-    std::stack<char*> next;
+    std::stack<int> next;
     bool isJmp = false;
-    std::unordered_set<int> visited;
+    std::vector<bool> visited;
     bytefile* bf;
 
-    explicit ReachableProcessor(bytefile *bf) : bf(bf) {
-        next.push(bf->entrypoint_ptr);
+    explicit ReachableProcessor(bytefile *bf, const std::unordered_set<int>& entrypoints) : visited(bf->code_size, false), bf(bf) {
+        for (auto &e : entrypoints) {
+            next.push(e);
+        }
     }
 
     bool isVisited(int addr) {
-        return visited.contains(addr);
+        return visited[addr];
+    }
+
+    void visit(int addr) {
+        if (!isVisited(addr)) {
+            visited[addr] = true;
+            next.push(addr);
+        }
     }
 
     void processJmp(ProcessorState&, int addr) {
         isJmp = true;
-        if (!isVisited(addr)) {
-            next.push(bf->code_ptr + addr);
-        }
+        visit(addr);
     }
 
     void processCJmp(ProcessorState&, aint addr, bool) {
-        if (!isVisited(addr)) {
-            next.push(bf->code_ptr + addr);
-        }
+        visit(addr);
     }
 
     void processCall(ProcessorState&, size_t addr, int) {
-        if (!isVisited(addr)) {
-            next.push(bf->code_ptr + addr);
-        }
+        visit(addr);
     }
 
     void processClosure(ProcessorState& state, int nargs, int addr) {
@@ -78,9 +81,7 @@ struct ReachableProcessor : NoOpProcessor {
             state.readInt();
         }
 
-        if (!isVisited(addr)) {
-            next.push(bf->code_ptr + addr);
-        }
+        visit(addr);
     }
 
     void processEnd(ProcessorState&) {
@@ -225,24 +226,26 @@ int main(int argc, char* argv[]) {
 
     auto *file = readFile(argv[1]);
 
-    ReachableProcessor p(file);
+    std::unordered_set<int> entrypoints;
+    for (int i = 0; i < file->public_symbols_number; i++) {
+        entrypoints.insert(get_public_offset(file, i));
+    }
+
+    ReachableProcessor p(file, entrypoints);
     std::vector<BytecodeSeq> sequences;
     while (!p.next.empty()) {
-        char* ip = p.next.top();
+        auto nextOffset = p.next.top();
         p.next.pop();
-        if (p.isVisited(ip - file->code_ptr)) {
-            continue;
-        }
 
-        p.visited.insert(ip - file->code_ptr);
+        auto ip = file->code_ptr + nextOffset;
         ProcessorState state = {file, ip};
         processInstruction(p, state);
 
-        sequences.emplace_back(ip, state.ip);
+        sequences.emplace_back(ip, state.ip - ip);
 
         // ReSharper disable once CppDFAConstantConditions
         if (!p.isJmp) {
-            p.next.push(state.ip);
+            p.visit(state.ip - file->code_ptr);
         }
         p.isJmp = false;
     }
@@ -255,20 +258,20 @@ int main(int argc, char* argv[]) {
         processInstruction(isJmp, state);
 
         // ReSharper disable once CppDFAConstantConditions
-        if (!isJmp.isJump) {
-            sequences.emplace_back(sequences[i].begin, sequences[i + 1].end);
+        if (!isJmp.isJump && !entrypoints.contains(sequences[i + 1].begin - file->code_ptr)) {
+            sequences.emplace_back(sequences[i].begin, sequences[i].length + sequences[i + 1].length);
         }
     }
     sequences.shrink_to_fit();
 
     constexpr auto compare = [](const BytecodeSeq &i1, const BytecodeSeq &i2) {
-        for (auto i = 0; i1.begin + i != i1.end && i2.begin + i != i2.end; i++) {
+        for (auto i = 0; i != i1.length && i != i2.length; i++) {
             if (i1.begin[i] != i2.begin[i]) {
                 return (int)i2.begin[i] - (int)i1.begin[i];
             }
         }
 
-        return (int)(i2.end - i2.begin) - (int)(i1.end - i1.begin);
+        return i2.length - i1.length;
     };
 
     std::ranges::sort(sequences, [&](const BytecodeSeq& s1, const BytecodeSeq& s2) {
@@ -276,20 +279,19 @@ int main(int argc, char* argv[]) {
     });
     std::vector<Idiom> squashed;
     for (auto &e : sequences) {
-        if (squashed.empty() || compare(squashed.back().seq, e) != 0) {
-            squashed.emplace_back(e, 1);
+        if (squashed.empty() || compare(*squashed.back().seq, e) != 0) {
+            squashed.emplace_back(&e, 1);
         } else {
             squashed.back().count++;
         }
     }
-    sequences.clear();
 
     std::ranges::sort(squashed, [](const Idiom &i1, const Idiom &i2) {return i1.count > i2.count; });
     for (auto [seq, count] : squashed) {
         PrintProcessor pp;
-        ProcessorState s = {file, seq.begin};
+        ProcessorState s = {file, seq->begin};
         processInstruction(pp, s);
-        if (s.ip != seq.end) {
+        if (s.ip - seq->begin != seq->length) {
             processInstruction(pp, s);
         }
         std::cout << "Sequence <" << pp.ss.str() << ">:\n\t" << count << " times" << std::endl;
