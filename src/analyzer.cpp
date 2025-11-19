@@ -259,7 +259,7 @@ int main(int argc, char* argv[]) {
         }
 
         // ReSharper disable once CppDFAConstantConditions
-        prev = p.isControl ? nullptr : ip;
+        prev = p.isControl || p.isVisited(state.ip - file->code_ptr)? nullptr : ip;
 
         // ReSharper disable once CppDFAConstantConditions
         if (!p.isJmp) {
