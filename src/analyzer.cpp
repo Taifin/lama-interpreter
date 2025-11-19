@@ -254,12 +254,12 @@ int main(int argc, char* argv[]) {
         processInstruction(p, state);
 
         record(ip, state.ip, shortSequences, sequences);
-        if (prev != nullptr) {
+        if (prev != nullptr && !entrypoints.contains(ip - file->code_ptr)) {
             record(prev, state.ip, shortSequences, sequences);
         }
 
         // ReSharper disable once CppDFAConstantConditions
-        prev = p.isControl || entrypoints.contains(ip - file->code_ptr) ? nullptr : ip;
+        prev = p.isControl ? nullptr : ip;
 
         // ReSharper disable once CppDFAConstantConditions
         if (!p.isJmp) {
