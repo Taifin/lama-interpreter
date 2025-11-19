@@ -11,7 +11,7 @@
 
 struct BytecodeSeq {
     char* begin;
-    int length;
+    long length;
 };
 
 struct Idiom {
@@ -19,29 +19,16 @@ struct Idiom {
     int count;
 };
 
-struct IsJumpProcessor : NoOpProcessor {
-    bool isJump = false;
-    void processCJmp(ProcessorState&, aint, bool) {
-        isJump = true;
-    }
-    void processCall(ProcessorState&, size_t, int) {
-        isJump = true;
-    }
-    void processCallC(ProcessorState&, int) {
-        isJump = true;
-    }
-    void processJmp(ProcessorState&, int) {
-        isJump = true;
-    }
-    void processEnd(ProcessorState&) {
-        isJump = true;
-    }
+struct ShortIdiom {
+    BytecodeSeq seq;
+    int count;
 };
 
 struct ReachableProcessor : NoOpProcessor {
     // implicit blocks: the next instruction is always added after any jumps
     std::stack<int> next;
     bool isJmp = false;
+    bool isControl = false;
     std::vector<bool> visited;
     bytefile* bf;
 
@@ -64,15 +51,22 @@ struct ReachableProcessor : NoOpProcessor {
 
     void processJmp(ProcessorState&, int addr) {
         isJmp = true;
+        isControl = true;
         visit(addr);
     }
 
     void processCJmp(ProcessorState&, aint addr, bool) {
         visit(addr);
+        isControl = true;
     }
 
     void processCall(ProcessorState&, size_t addr, int) {
         visit(addr);
+        isControl = true;
+    }
+
+    void processCallC(ProcessorState&, int) {
+        isControl = true;
     }
 
     void processClosure(ProcessorState& state, int nargs, int addr) {
@@ -86,10 +80,12 @@ struct ReachableProcessor : NoOpProcessor {
 
     void processEnd(ProcessorState&) {
         isJmp = true;
+        isControl = true;
     }
 
     void processFail(ProcessorState&, int, int) {
         isJmp = true;
+        isControl = true;
     }
 };
 
@@ -218,6 +214,20 @@ struct PrintProcessor : NoOpProcessor {
     void processBarray(ProcessorState&, int i) { opcode("BARRAY"); arg(i); }
 };
 
+void record(char* begin, const char* end, std::vector<ShortIdiom>& shortSequences, std::vector<BytecodeSeq>& sequences) {
+    if (end - begin == 2) {
+        auto i = ((int)(*(end - 1)) << 8) + (int)*begin;
+        shortSequences[i].seq = {begin, 2};
+        shortSequences[i].count++;
+    } else if (end - begin == 1) {
+        auto i = *begin;
+        shortSequences[i].seq = {begin, 1};
+        shortSequences[i].count++;
+    } else {
+        sequences.emplace_back(begin, end - begin);
+    }
+}
+
 int main(int argc, char* argv[]) {
     if (argc != 2) {
         std::cerr << "Usage: " << argv[0] << " <bytecode-file>" << std::endl;
@@ -232,6 +242,8 @@ int main(int argc, char* argv[]) {
     }
 
     ReachableProcessor p(file, entrypoints);
+    std::vector<ShortIdiom> shortSequences(1 << 16, {{nullptr, 0}, 0});
+    char* prev = nullptr;
     std::vector<BytecodeSeq> sequences;
     while (!p.next.empty()) {
         auto nextOffset = p.next.top();
@@ -241,37 +253,30 @@ int main(int argc, char* argv[]) {
         ProcessorState state = {file, ip};
         processInstruction(p, state);
 
-        sequences.emplace_back(ip, state.ip - ip);
+        record(ip, state.ip, shortSequences, sequences);
+        if (prev != nullptr) {
+            record(prev, state.ip, shortSequences, sequences);
+        }
+
+        // ReSharper disable once CppDFAConstantConditions
+        prev = p.isControl ? nullptr : ip;
 
         // ReSharper disable once CppDFAConstantConditions
         if (!p.isJmp) {
             p.visit(state.ip - file->code_ptr);
         }
         p.isJmp = false;
+        p.isControl = false;
     }
-
-    auto sequences_size = sequences.size();
-    sequences.reserve(sequences_size * 2);
-    for (int i = 0; i < sequences_size - 1; i++) {
-        IsJumpProcessor isJmp;
-        ProcessorState state = {file, sequences[i].begin};
-        processInstruction(isJmp, state);
-
-        // ReSharper disable once CppDFAConstantConditions
-        if (!isJmp.isJump && !entrypoints.contains(sequences[i + 1].begin - file->code_ptr)) {
-            sequences.emplace_back(sequences[i].begin, sequences[i].length + sequences[i + 1].length);
-        }
-    }
-    sequences.shrink_to_fit();
 
     constexpr auto compare = [](const BytecodeSeq &i1, const BytecodeSeq &i2) {
-        for (auto i = 0; i != i1.length && i != i2.length; i++) {
+        for (auto i = 0; i < i1.length && i < i2.length; i++) {
             if (i1.begin[i] != i2.begin[i]) {
                 return (int)i2.begin[i] - (int)i1.begin[i];
             }
         }
 
-        return i2.length - i1.length;
+        return (int)(i2.length - i1.length);
     };
 
     std::ranges::sort(sequences, [&](const BytecodeSeq& s1, const BytecodeSeq& s2) {
@@ -284,6 +289,10 @@ int main(int argc, char* argv[]) {
         } else {
             squashed.back().count++;
         }
+    }
+
+    for (auto &[seq, count] : shortSequences) {
+        if (seq.begin != nullptr) squashed.emplace_back(&seq, count);
     }
 
     std::ranges::sort(squashed, [](const Idiom &i1, const Idiom &i2) {return i1.count > i2.count; });
